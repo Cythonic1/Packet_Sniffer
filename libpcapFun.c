@@ -25,12 +25,35 @@ void printPacketHeader(const u_char *packet, struct pcap_pkthdr packetHeader){
     fprintf(stdout, "Packet Total Length %d\n",packetHeader.len);
 }
 
+void printIpHeader(const u_char *packetBody){
+    const u_char *ipHeader, *tcpHeader, *payloadLen;
+    int etherHeaderLen = sizeof(struct ether_header);
+    ipHeader = packetBody + etherHeaderLen;
+    // The example below shows how we can extract the lower 4 bits from the first byte 
+    // in the IP header example if we have 01010011 the results gonna be 0011.
+    int ipHeaderLen = ((*ipHeader) & 0x0F);
+    printf("The ip header length in 32-bit %d;\n", ipHeaderLen);
+    printf("The ip header length in words %d;\n", ipHeaderLen * 4);
+    // we mutilplay by 4 to change from 32 bit to words 
+    ipHeaderLen = ipHeaderLen * 4;
+    int protocolType = *(ipHeader + 9);
+
+    fprintf(stdout, "The ip header type : %d\n", (*(ipHeader + 9)));
+    // conver it into switch for better managment
+    if (protocolType != IPPROTO_TCP){
+        fprintf(stderr, "This packet it not TCP packet\n");
+    }
+
+
+}
+
 void packetHandler(u_char  *args, const struct pcap_pkthdr *packetHeader, const u_char *packetBody){
     struct ether_header *etherHeader;
     etherHeader = (struct ether_header *) packetBody;
     int etherHeaderType = ntohs(etherHeader->ether_type);
     if(etherHeaderType == ETHERTYPE_IP){
         fprintf(stdout, "This packet is an IP packet\n");
+        printIpHeader(packetBody);
         fprintf(stdout, "------------------------------------\n");
     }else if(etherHeaderType == ETHERTYPE_ARP){
         fprintf(stdout, "This packet is an ARP packet\n");

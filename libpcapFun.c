@@ -2,6 +2,7 @@
 #include <netinet/in.h>
 #include <pcap.h>
 #include <pcap/pcap.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/types.h>
@@ -25,6 +26,45 @@ void printPacketHeader(const u_char *packet, struct pcap_pkthdr packetHeader){
     fprintf(stdout, "Packet Total Length %d\n",packetHeader.len);
 }
 
+typedef struct IPHeader {
+    uint8_t versionAndIhl;
+    uint8_t tos;
+    uint16_t totalLength;
+    uint16_t identification;
+    uint16_t fragmentOffSetAndFlags;
+    uint8_t ttl;
+    uint8_t protocol;
+    uint16_t headerChecksum;
+    uint32_t srcIP;
+    uint32_t destIP;
+} IPHeader_t;
+
+
+// the numberOfBitsToPrint is starting from zero as well as the offset
+void printBits(void *someint , int size, int numberOfBitsToPrint, int offSet){
+    long long i,j;
+    unsigned char *byte = (unsigned char *)someint; // Cast to unsigned char pointer
+    for(i = 0; i < size; i++){
+        for(j = 7; j >= 0; j--){
+            unsigned char bit = (byte[i] >> j)&1;
+            if (offSet != 0){
+                if (j <= offSet){
+                    fprintf(stdout, ".");
+                }else{
+                    fprintf(stdout, "%d", bit);
+                }
+            }else{
+                if (j > numberOfBitsToPrint){
+                    fprintf(stdout, ".");
+                }else{
+                    fprintf(stdout, "%d", bit);
+                }
+            }
+        }
+        printf(" ");
+    }
+    /*printf("\n");*/
+}
 void printIpHeader(const u_char *packetBody){
     const u_char *ipHeader, *tcpHeader, *payloadLen;
     int etherHeaderLen = sizeof(struct ether_header);
@@ -38,13 +78,59 @@ void printIpHeader(const u_char *packetBody){
     ipHeaderLen = ipHeaderLen * 4;
     int protocolType = *(ipHeader + 9);
 
+
     fprintf(stdout, "The ip header type : %d\n", (*(ipHeader + 9)));
     // conver it into switch for better managment
     if (protocolType != IPPROTO_TCP){
         fprintf(stderr, "This packet it not TCP packet\n");
     }
 
+    IPHeader_t *parser = (IPHeader_t *)ipHeader;
+    printBits(&parser->versionAndIhl, sizeof(parser->versionAndIhl), 3, 0);
+    fprintf(stdout, " ihl: %u (Header Length: %u bytes)\n", (parser->versionAndIhl & 0x0F), (parser->versionAndIhl & 0x0F) * 4);
 
+    printBits(&parser->versionAndIhl, sizeof(parser->versionAndIhl), 3, 3);
+    fprintf(stdout, "Ip version: %u\n", parser->versionAndIhl >> 4); // the ">>" is used to get the first 4 bits
+
+    printBits(&parser->tos, sizeof(parser->tos), 5, 1);
+    fprintf(stdout, "Defrentiated service codepoint : %u\n", parser->tos >> 6);
+
+    printBits(&parser->tos, sizeof(parser->tos), 1, 0);
+    fprintf(stdout, "Explicit conjection notification: %u\n", (parser->tos & 0x03));
+    
+    printBits(&parser->totalLength, sizeof(parser->totalLength), 15, 0);
+    fprintf(stdout, "Total length %u\n", parser->totalLength);
+
+    printBits(&parser->identification, sizeof(parser->identification),15, 0);
+    fprintf(stdout, "identification : %u\n", parser->identification);
+
+    /*uint16_t fragmentOffSetAndFlags = ntohs(parser->fragmentOffSetAndFlags);*/
+    /*printBits(&fragmentOffSetAndFlags, sizeof(fragmentOffSetAndFlags), 15, 0);*/
+    /*uint8_t flags = (fragmentOffSetAndFlags >> 13) & 0x07;*/
+    /*fprintf(stdout, "flags: %u\n", flags);*/
+    
+    printBits(&parser->ttl, sizeof(parser->ttl), 7, 0);
+    fprintf(stdout, "time to ive: %u\n", parser->ttl);
+
+    printBits(&parser->protocol, sizeof(parser->protocol), 7, 0);
+    fprintf(stdout, "the Protocol type is %u\n", parser->protocol);
+
+    printBits(&parser->headerChecksum, sizeof(parser->headerChecksum), 15, 0);
+    fprintf(stdout, "CheckSum: %u\n", parser->headerChecksum);
+    
+    uint32_t srcIP = ntohl(parser->srcIP);
+    printf("Source IP address: %u.%u.%u.%u\n",
+           (srcIP >> 24) & 0xFF, // First byte
+           (srcIP >> 16) & 0xFF, // Second byte
+           (srcIP >> 8) & 0xFF,  // Third byte
+           srcIP & 0xFF);        // Fourth byte
+
+    uint32_t destIP = ntohl(parser->destIP);
+    printf("Destinitation IP address: %u.%u.%u.%u\n",
+           (destIP >> 24) & 0xFF, // First byte
+           (destIP >> 16) & 0xFF, // Second byte
+           (destIP >> 8) & 0xFF,  // Third byte
+           destIP & 0xFF);        // Fourth byte
 }
 
 void packetHandler(u_char  *args, const struct pcap_pkthdr *packetHeader, const u_char *packetBody){

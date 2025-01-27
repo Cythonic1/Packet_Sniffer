@@ -7,7 +7,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <net/ethernet.h>
-
+#include <netinet/tcp.h>
 // Function to print the LinkedList
 void printLinkedList(pcap_if_t *list ){
 
@@ -39,22 +39,42 @@ typedef struct IPHeader {
     uint32_t destIP;
 } IPHeader_t;
 
+typedef struct TCPHeader{
+    uint16_t srcPort;
+    uint16_t destPort;
+    uint32_t sequenceNumber;
+    uint32_t ackNumber;
+    uint16_t doRsvFlags;
+    uint16_t window;
+    uint16_t checkSum;
+    uint16_t urgentPointer;
+
+} TCPHeader_t;
+
+typedef struct UDPHeader{
+    uint16_t srcPort;
+    uint16_t destPort;
+    uint16_t length;
+    uint16_t checkSum;
+} UDPHeader_t;
 
 // the numberOfBitsToPrint is starting from zero as well as the offset
 void printBits(void *someint , int size, int numberOfBitsToPrint, int offSet){
     long long i,j;
     unsigned char *byte = (unsigned char *)someint; // Cast to unsigned char pointer
+    int counterbytes = (size*8) -1 ;
     for(i = 0; i < size; i++){
         for(j = 7; j >= 0; j--){
             unsigned char bit = (byte[i] >> j)&1;
+            counterbytes--;
             if (offSet != 0){
-                if (j <= offSet){
+                if (counterbytes <= offSet){
                     fprintf(stdout, ".");
                 }else{
                     fprintf(stdout, "%d", bit);
                 }
             }else{
-                if (j > numberOfBitsToPrint){
+                if (counterbytes >= numberOfBitsToPrint){
                     fprintf(stdout, ".");
                 }else{
                     fprintf(stdout, "%d", bit);
@@ -64,6 +84,52 @@ void printBits(void *someint , int size, int numberOfBitsToPrint, int offSet){
         printf(" ");
     }
     /*printf("\n");*/
+}
+
+void printTCPHeader(const u_char *packetBody , int ethIpHeaderLen){
+    const u_char *tcpHeader = packetBody + ethIpHeaderLen;
+    TCPHeader_t *tcp = (TCPHeader_t *) tcpHeader;
+
+    fprintf(stdout, "Source Port: %u\n", ntohs(tcp->srcPort));
+    fprintf(stdout, "Destinitation Port: %u\n", ntohs(tcp->destPort));
+    fprintf(stdout, "Sequence Number : %u\n", ntohl(tcp->sequenceNumber));
+    fprintf(stdout, "Acknowledgment number : %u\n", ntohl(tcp->ackNumber));
+    fprintf(stdout, "Data offset : %u\n", (tcp->doRsvFlags >> 4) * 4);
+
+    // Parse data offset, reserved bits, and flags
+    uint16_t doRsvFlags = ntohs(tcp->doRsvFlags);
+    uint8_t data_offset = (doRsvFlags >> 12) & 0xF;
+    uint8_t reserved = (doRsvFlags >> 9) & 0x7;
+    uint8_t ns_flag = (doRsvFlags >> 8) & 0x1;
+    uint8_t cwr_flag = (doRsvFlags >> 7) & 0x1;
+    uint8_t ece_flag = (doRsvFlags >> 6) & 0x1;
+    uint8_t urg_flag = (doRsvFlags >> 5) & 0x1;
+    uint8_t ack_flag = (doRsvFlags >> 4) & 0x1;
+    uint8_t psh_flag = (doRsvFlags >> 3) & 0x1;
+    uint8_t rst_flag = (doRsvFlags >> 2) & 0x1;
+    uint8_t syn_flag = (doRsvFlags >> 1) & 0x1;
+    uint8_t fin_flag = doRsvFlags & 0x1;
+    fprintf(stdout, "Data Offset (Header Length): %u bytes\n", data_offset * 4);
+    fprintf(stdout, "Reserved Bits: %u\n", reserved);
+    printBits(&tcp->doRsvFlags, sizeof(tcp->doRsvFlags), 8, 0);
+    fprintf(stdout, "Flags: [NS=%u, CWR=%u, ECE=%u, URG=%u, ACK=%u, PSH=%u, RST=%u, SYN=%u, FIN=%u]\n",
+            ns_flag, cwr_flag, ece_flag, urg_flag, ack_flag, psh_flag, rst_flag, syn_flag, fin_flag);
+
+    fprintf(stdout, "window  : %u\n", ntohs(tcp->window));
+    fprintf(stdout, "CheckSum  : %u\n", ntohs(tcp->checkSum));
+    fprintf(stdout, "urgent Pointer  : %u\n", ntohs(tcp->urgentPointer));
+
+    return ;
+}
+
+void printUDPHeader(const u_char *packetBody, int ethIpHeaderLen){
+    const u_char *udpHeader = packetBody + ethIpHeaderLen;
+    UDPHeader_t *udp = (UDPHeader_t *) udpHeader;
+    fprintf(stdout, "Source Port: %u\n", ntohs(udp->srcPort));
+    fprintf(stdout, "Destinitation Port: %u\n", ntohs(udp->destPort));
+    fprintf(stdout, "Length: %u\n", ntohs(udp->length));
+    fprintf(stdout, "CheckSum  : %u\n", ntohs(udp->checkSum));
+    return ;
 }
 void printIpHeader(const u_char *packetBody){
     const u_char *ipHeader, *tcpHeader, *payloadLen;
@@ -118,19 +184,21 @@ void printIpHeader(const u_char *packetBody){
     printBits(&parser->headerChecksum, sizeof(parser->headerChecksum), 15, 0);
     fprintf(stdout, "CheckSum: %u\n", parser->headerChecksum);
     
-    uint32_t srcIP = ntohl(parser->srcIP);
-    printf("Source IP address: %u.%u.%u.%u\n",
-           (srcIP >> 24) & 0xFF, // First byte
-           (srcIP >> 16) & 0xFF, // Second byte
-           (srcIP >> 8) & 0xFF,  // Third byte
-           srcIP & 0xFF);        // Fourth byte
+    struct in_addr srcAddr, destAddr;
+    srcAddr.s_addr = parser->srcIP;
+    destAddr.s_addr = parser->destIP;
+    printf("Source IP address: %s\n", inet_ntoa(srcAddr));
+    printf("Destination IP address: %s\n", inet_ntoa(destAddr));
 
-    uint32_t destIP = ntohl(parser->destIP);
-    printf("Destinitation IP address: %u.%u.%u.%u\n",
-           (destIP >> 24) & 0xFF, // First byte
-           (destIP >> 16) & 0xFF, // Second byte
-           (destIP >> 8) & 0xFF,  // Third byte
-           destIP & 0xFF);        // Fourth byte
+    if(parser->protocol == 6){
+        int tcpHeaderLen = etherHeaderLen + ipHeaderLen ;
+        printTCPHeader(packetBody, tcpHeaderLen);
+    }else if(parser->protocol == 17){
+        printUDPHeader(packetBody, (etherHeaderLen + ipHeaderLen));
+    }else{
+        fprintf(stderr, "Not supported Protocol");
+
+    }
 }
 
 void packetHandler(u_char  *args, const struct pcap_pkthdr *packetHeader, const u_char *packetBody){

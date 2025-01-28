@@ -2,8 +2,10 @@
 #include <netinet/in.h>
 #include <pcap.h>
 #include <pcap/pcap.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
 #include <net/ethernet.h>
@@ -57,6 +59,19 @@ typedef struct UDPHeader{
     uint16_t length;
     uint16_t checkSum;
 } UDPHeader_t;
+
+typedef struct ARP {
+    uint16_t HardwareType;              
+    uint16_t ProtocolType;              
+    uint8_t HardwareAddressLength;      
+    uint8_t ProtocolAddressLength;      
+    uint16_t Operation;                 
+    uint8_t SenderHardwareAddress[6];   
+    uint8_t SenderProtocolAddress[4];   
+    uint8_t TargetHardwareAddress[6];   
+    uint8_t TargetProtocolAddress[4];   
+} ARP_t;
+
 
 // the numberOfBitsToPrint is starting from zero as well as the offset
 void printBits(void *someint , int size, int numberOfBitsToPrint, int offSet){
@@ -131,6 +146,46 @@ void printUDPHeader(const u_char *packetBody, int ethIpHeaderLen){
     fprintf(stdout, "CheckSum  : %u\n", ntohs(udp->checkSum));
     return ;
 }
+
+void printMacAddress(uint8_t mac[], size_t size){
+    for (int i = 0; i < size ; i++) {
+        if(i == (size - 1)){
+            fprintf(stdout, "%02X", mac[i]);
+            break;
+        }
+        fprintf(stdout, "%02X:", mac[i]);
+    }
+    printf("\n");
+
+}
+void printARPHeader(const u_char *packetBody){
+    const u_char *arpHeader = packetBody + sizeof(struct ether_header);
+    ARP_t *arp = (ARP_t *) arpHeader;
+    struct in_addr srcAddr, destAddr;
+
+    fprintf(stdout, "Hardware Type : %u\n", ntohs(arp->HardwareType));
+    fprintf(stdout, "Protocol Type : %u\n", ntohs(arp->ProtocolType));
+    fprintf(stdout, "Hardware Address Length : %u\n", arp->HardwareAddressLength);
+    fprintf(stdout, "Protocl Address Length : %u\n", arp->ProtocolAddressLength);
+    fprintf(stdout, "Operation: %u\n", ntohs(arp->Operation));
+
+    fprintf(stdout, "Sender Hardware Address : ");
+    printMacAddress(arp->SenderHardwareAddress, 6);
+
+    uint32_t senderAddr;
+    memcpy(&senderAddr, arp->SenderProtocolAddress,4);
+    srcAddr.s_addr = senderAddr;
+    fprintf(stdout, "Sender protocol Address : %s\n", inet_ntoa(srcAddr));
+
+    fprintf(stdout, "Target Hardware Address : ");
+    printMacAddress(arp->TargetHardwareAddress, 6);
+
+    uint32_t targetAddr;
+    memcpy(&targetAddr, arp->TargetProtocolAddress,4);
+    destAddr.s_addr = targetAddr;
+    fprintf(stdout, "Target protocol Address : %s\n", inet_ntoa(destAddr));
+
+}
 void printIpHeader(const u_char *packetBody){
     const u_char *ipHeader, *tcpHeader, *payloadLen;
     int etherHeaderLen = sizeof(struct ether_header);
@@ -164,11 +219,13 @@ void printIpHeader(const u_char *packetBody){
     printBits(&parser->tos, sizeof(parser->tos), 1, 0);
     fprintf(stdout, "Explicit conjection notification: %u\n", (parser->tos & 0x03));
     
-    printBits(&parser->totalLength, sizeof(parser->totalLength), 15, 0);
-    fprintf(stdout, "Total length %u\n", parser->totalLength);
+    uint16_t totalLength = ntohs(parser->totalLength);
+    printBits(&totalLength, sizeof(parser->totalLength), 15, 0);
+    fprintf(stdout, "Total length %u\n", totalLength);
 
+    uint16_t identification = ntohs(parser->identification);
     printBits(&parser->identification, sizeof(parser->identification),15, 0);
-    fprintf(stdout, "identification : %u\n", parser->identification);
+    fprintf(stdout, "identification : %u\n", identification);
 
     /*uint16_t fragmentOffSetAndFlags = ntohs(parser->fragmentOffSetAndFlags);*/
     /*printBits(&fragmentOffSetAndFlags, sizeof(fragmentOffSetAndFlags), 15, 0);*/
@@ -181,8 +238,9 @@ void printIpHeader(const u_char *packetBody){
     printBits(&parser->protocol, sizeof(parser->protocol), 7, 0);
     fprintf(stdout, "the Protocol type is %u\n", parser->protocol);
 
-    printBits(&parser->headerChecksum, sizeof(parser->headerChecksum), 15, 0);
-    fprintf(stdout, "CheckSum: %u\n", parser->headerChecksum);
+    uint16_t checkSum = ntohs(parser->headerChecksum);
+    printBits(&checkSum, sizeof(parser->headerChecksum), 15, 0);
+    fprintf(stdout, "CheckSum: %u\n", checkSum);
     
     struct in_addr srcAddr, destAddr;
     srcAddr.s_addr = parser->srcIP;
@@ -206,11 +264,12 @@ void packetHandler(u_char  *args, const struct pcap_pkthdr *packetHeader, const 
     etherHeader = (struct ether_header *) packetBody;
     int etherHeaderType = ntohs(etherHeader->ether_type);
     if(etherHeaderType == ETHERTYPE_IP){
-        fprintf(stdout, "This packet is an IP packet\n");
-        printIpHeader(packetBody);
-        fprintf(stdout, "------------------------------------\n");
+        /*fprintf(stdout, "This packet is an IP packet\n");*/
+        /*printIpHeader(packetBody);*/
+        /*fprintf(stdout, "------------------------------------\n");*/
     }else if(etherHeaderType == ETHERTYPE_ARP){
         fprintf(stdout, "This packet is an ARP packet\n");
+        printARPHeader(packetBody);
         fprintf(stdout, "------------------------------------\n");
     }else if(etherHeaderType == ETHERTYPE_REVARP){
         fprintf(stdout, "This packet is a Reverse ARP  packet\n");

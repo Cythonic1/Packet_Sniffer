@@ -1,4 +1,4 @@
 #!/bin/bash
 
 
-clang ./libpcapFun.c -lpcap -o libpcap
+clang ./main.c -lpcap -o main

@@ -10,6 +10,7 @@
 #include <sys/types.h>
 #include <net/ethernet.h>
 #include <netinet/tcp.h>
+
 // Function to print the LinkedList
 void printLinkedList(pcap_if_t *list ){
 
@@ -73,6 +74,50 @@ typedef struct ARP {
 } ARP_t;
 
 
+typedef struct DHCP{
+    uint8_t op; // Operation code 
+    uint8_t htype; // hardware type
+    uint8_t hlen; // Hardware address length
+    uint8_t htop; // The number of hops to travel before drop the packet
+    /*Transaction ID, a random number chosen by the*/
+    /*client, used by the client and server to associate*/
+    /*messages and responses between a client and a*/
+    /*server*/
+    uint32_t xid;
+    /*Filled in by client, seconds elapsed since client*/
+    /*began address acquisition or renewal process*/
+    uint16_t secs;
+    /* we only care about the first bit in the flag header the rest are zeros check RFC 2131 */
+    uint16_t flags;
+    /*Client IP address; only filled in if client is in BOUND, RENEW or REBINDING state and can respond to ARP requests*/
+    uint32_t ciaddr;
+    /* Your IP address :) */
+    uint32_t yiaddr;
+    /*IP address of next server to use in bootstrap; returned in DHCPOFFER, DHCPACK by server.*/
+    uint32_t siaddr;
+    /*Relay agent IP address, used in booting via a relay agent.*/
+    uint32_t giaddr;
+    /* client Hardware Address */
+    uint8_t macAddress[6];
+    uint8_t padding[6];
+    /*host name (Optional) */
+    char sname[64];
+    /* Boot File name */
+    char file[128];
+}DHCP_t;
+
+
+void printMacAddress(uint8_t mac[], size_t size){
+    for (int i = 0; i < size ; i++) {
+        if(i == (size - 1)){
+            fprintf(stdout, "%02X", mac[i]);
+            break;
+        }
+        fprintf(stdout, "%02X:", mac[i]);
+    }
+    printf("\n");
+
+}
 // the numberOfBitsToPrint is starting from zero as well as the offset
 void printBits(void *someint , int size, int numberOfBitsToPrint, int offSet){
     long long i,j;
@@ -137,27 +182,51 @@ void printTCPHeader(const u_char *packetBody , int ethIpHeaderLen){
     return ;
 }
 
+void printDHCPHeader(const u_char *packetBody , int32_t udpHeaderSize){
+    const u_char *dhcpHeader = packetBody + udpHeaderSize;
+    DHCP_t *dhcp = (DHCP_t *) dhcpHeader;
+    fprintf(stdout, "messages Type: %u\n", dhcp->op);
+    fprintf(stdout, "Hardware Type: %u\n", dhcp->htype);
+    fprintf(stdout, "Hardware Address Length : %u\n", dhcp->hlen);
+    fprintf(stdout, "hops : %u\n", dhcp->htop);
+    fprintf(stdout, "Transcation Id: 0x%x\n",ntohl(dhcp->xid) );
+    fprintf(stdout, "Second elapsed : %u\n", ntohs(dhcp->secs));
+    uint16_t flagBits = ntohs(dhcp->flags);
+    printBits(&flagBits, sizeof(dhcp->flags), 1, 14);
+    fprintf(stdout, " Bootp flags : %u\n", flagBits  & 1);
+    printBits(&flagBits, sizeof(dhcp->flags), 14, 0);
+    fprintf(stdout, "reserved : 0x%x\n", (flagBits & 0x7FFF));
+    struct in_addr ciaddr, giaddr, siaddr, yiaddr;
+    ciaddr.s_addr = dhcp->ciaddr;
+    yiaddr.s_addr = dhcp->yiaddr;
+    siaddr.s_addr = dhcp->siaddr;
+    giaddr.s_addr = dhcp->giaddr;
+    fprintf(stdout, "Client IP address : %s\n", inet_ntoa(ciaddr));
+    fprintf(stdout, "Your (client) IP address : %s\n", inet_ntoa(yiaddr));
+    fprintf(stdout, "Next Server IP address: %s\n", inet_ntoa(siaddr));
+    fprintf(stdout, "Relay agent IP address : %s\n", inet_ntoa(giaddr));
+    fprintf(stdout, "Client Mac Address : ");
+    printMacAddress(dhcp->macAddress, 6);
+    fprintf(stdout, "Server host name : %s\n", dhcp->sname);
+    fprintf(stdout, "Boot file name  : %s\n", dhcp->file);
+
+}
+
 void printUDPHeader(const u_char *packetBody, int ethIpHeaderLen){
     const u_char *udpHeader = packetBody + ethIpHeaderLen;
     UDPHeader_t *udp = (UDPHeader_t *) udpHeader;
+    uint16_t udpHeaderSize = ethIpHeaderLen + sizeof(UDPHeader_t);
     fprintf(stdout, "Source Port: %u\n", ntohs(udp->srcPort));
     fprintf(stdout, "Destinitation Port: %u\n", ntohs(udp->destPort));
     fprintf(stdout, "Length: %u\n", ntohs(udp->length));
     fprintf(stdout, "CheckSum  : %u\n", ntohs(udp->checkSum));
+    if (ntohs(udp->srcPort) == 68 || ntohs(udp->srcPort) == 67) {
+        fprintf(stdout, "This is a DHCP packet\n");
+        printDHCPHeader(packetBody,  udpHeaderSize);
+    }
     return ;
 }
 
-void printMacAddress(uint8_t mac[], size_t size){
-    for (int i = 0; i < size ; i++) {
-        if(i == (size - 1)){
-            fprintf(stdout, "%02X", mac[i]);
-            break;
-        }
-        fprintf(stdout, "%02X:", mac[i]);
-    }
-    printf("\n");
-
-}
 void printARPHeader(const u_char *packetBody){
     const u_char *arpHeader = packetBody + sizeof(struct ether_header);
     ARP_t *arp = (ARP_t *) arpHeader;
@@ -187,7 +256,7 @@ void printARPHeader(const u_char *packetBody){
 
 }
 void printIpHeader(const u_char *packetBody){
-    const u_char *ipHeader, *tcpHeader, *payloadLen;
+    const u_char *ipHeader;
     int etherHeaderLen = sizeof(struct ether_header);
     ipHeader = packetBody + etherHeaderLen;
     // The example below shows how we can extract the lower 4 bits from the first byte 
@@ -249,12 +318,13 @@ void printIpHeader(const u_char *packetBody){
     printf("Destination IP address: %s\n", inet_ntoa(destAddr));
 
     if(parser->protocol == 6){
-        int tcpHeaderLen = etherHeaderLen + ipHeaderLen ;
-        printTCPHeader(packetBody, tcpHeaderLen);
+        /*int tcpHeaderLen = etherHeaderLen + ipHeaderLen ;*/
+        /*printTCPHeader(packetBody, tcpHeaderLen);*/
     }else if(parser->protocol == 17){
         printUDPHeader(packetBody, (etherHeaderLen + ipHeaderLen));
     }else{
-        fprintf(stderr, "Not supported Protocol");
+        fprintf(stdout, "Protocol is : %i", parser->protocol);
+        fprintf(stderr, "Not supported Protocol\n");
 
     }
 }
@@ -264,9 +334,9 @@ void packetHandler(u_char  *args, const struct pcap_pkthdr *packetHeader, const 
     etherHeader = (struct ether_header *) packetBody;
     int etherHeaderType = ntohs(etherHeader->ether_type);
     if(etherHeaderType == ETHERTYPE_IP){
-        /*fprintf(stdout, "This packet is an IP packet\n");*/
-        /*printIpHeader(packetBody);*/
-        /*fprintf(stdout, "------------------------------------\n");*/
+        fprintf(stdout, "This packet is an IP packet\n");
+        printIpHeader(packetBody);
+        fprintf(stdout, "------------------------------------\n");
     }else if(etherHeaderType == ETHERTYPE_ARP){
         fprintf(stdout, "This packet is an ARP packet\n");
         printARPHeader(packetBody);
@@ -336,7 +406,7 @@ int main(int argc , char **argv){
 
     pcap_t *handler;
     const u_char *packet;
-    struct pcap_pkthdr packetHeader;
+    struct pcap_pkthdr packetHeader = {.caplen = 0, .len = 0, .ts = {.tv_sec = 0, .tv_usec = 0}};
     int packetCountLimit = 1;
     int packetTimeOut = 90000; // In milliseconds
 
@@ -356,6 +426,7 @@ int main(int argc , char **argv){
     /*}*/
 
     printPacketHeader(packet, packetHeader);
+
 
     return 0;
 }

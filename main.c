@@ -104,6 +104,13 @@ typedef struct DHCP{
     char sname[64];
     /* Boot File name */
     char file[128];
+
+    // Decode the option header
+    /*
+     * To do so you need to find fisrt the magic bytes which they are 99, 130, 83 and 99 (accoring to RFC 2131) 
+     * after you find it the first byte tell us the number of the option and depdnece on that
+     * we can tell which option we deal with and we can decode it based on its know length or we can use the second byte to find t     * length of the option.
+     * */
 }DHCP_t;
 
 

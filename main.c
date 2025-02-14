@@ -260,54 +260,58 @@ void printARPHeader(const u_char *packetBody){
     memcpy(&targetAddr, arp->TargetProtocolAddress,4);
     destAddr.s_addr = targetAddr;
     fprintf(stdout, "Target protocol Address : %s\n", inet_ntoa(destAddr));
-
 }
-void printIpHeader(const u_char *packetBody){
+
+
+void printIpHeader(const u_char *packetBody) {
     const u_char *ipHeader;
     int etherHeaderLen = sizeof(struct ether_header);
     ipHeader = packetBody + etherHeaderLen;
-    // The example below shows how we can extract the lower 4 bits from the first byte 
-    // in the IP header example if we have 01010011 the results gonna be 0011.
+    // The example below shows how we can extract the lower 4 bits from the first
+    // byte in the IP header example if we have 01010011 the results gonna be
+    // 0011.
     int ipHeaderLen = ((*ipHeader) & 0x0F);
     printf("The ip header length in 32-bit %d;\n", ipHeaderLen);
     printf("The ip header length in words %d;\n", ipHeaderLen * 4);
-    // we mutilplay by 4 to change from 32 bit to words 
+    // we mutilplay by 4 to change from 32 bit to words
     ipHeaderLen = ipHeaderLen * 4;
     int protocolType = *(ipHeader + 9);
 
-
     fprintf(stdout, "The ip header type : %d\n", (*(ipHeader + 9)));
     // conver it into switch for better managment
-    if (protocolType != IPPROTO_TCP){
+    if (protocolType != IPPROTO_TCP) {
         fprintf(stderr, "This packet it not TCP packet\n");
     }
 
     IPHeader_t *parser = (IPHeader_t *)ipHeader;
     printBits(&parser->versionAndIhl, sizeof(parser->versionAndIhl), 3, 0);
-    fprintf(stdout, " ihl: %u (Header Length: %u bytes)\n", (parser->versionAndIhl & 0x0F), (parser->versionAndIhl & 0x0F) * 4);
+    fprintf(stdout, " ihl: %u (Header Length: %u bytes)\n",
+            (parser->versionAndIhl & 0x0F), (parser->versionAndIhl & 0x0F) * 4);
 
     printBits(&parser->versionAndIhl, sizeof(parser->versionAndIhl), 3, 3);
-    fprintf(stdout, "Ip version: %u\n", parser->versionAndIhl >> 4); // the ">>" is used to get the first 4 bits
+    fprintf(stdout, "Ip version: %u\n",
+            parser->versionAndIhl >> 4); // the ">>" is used to get the first 4 bits
 
     printBits(&parser->tos, sizeof(parser->tos), 5, 1);
     fprintf(stdout, "Defrentiated service codepoint : %u\n", parser->tos >> 6);
 
     printBits(&parser->tos, sizeof(parser->tos), 1, 0);
-    fprintf(stdout, "Explicit conjection notification: %u\n", (parser->tos & 0x03));
-    
+    fprintf(stdout, "Explicit conjection notification: %u\n",
+            (parser->tos & 0x03));
+
     uint16_t totalLength = ntohs(parser->totalLength);
     printBits(&totalLength, sizeof(parser->totalLength), 15, 0);
     fprintf(stdout, "Total length %u\n", totalLength);
 
     uint16_t identification = ntohs(parser->identification);
-    printBits(&parser->identification, sizeof(parser->identification),15, 0);
+    printBits(&parser->identification, sizeof(parser->identification), 15, 0);
     fprintf(stdout, "identification : %u\n", identification);
 
     /*uint16_t fragmentOffSetAndFlags = ntohs(parser->fragmentOffSetAndFlags);*/
     /*printBits(&fragmentOffSetAndFlags, sizeof(fragmentOffSetAndFlags), 15, 0);*/
     /*uint8_t flags = (fragmentOffSetAndFlags >> 13) & 0x07;*/
     /*fprintf(stdout, "flags: %u\n", flags);*/
-    
+
     printBits(&parser->ttl, sizeof(parser->ttl), 7, 0);
     fprintf(stdout, "time to ive: %u\n", parser->ttl);
 
@@ -317,22 +321,21 @@ void printIpHeader(const u_char *packetBody){
     uint16_t checkSum = ntohs(parser->headerChecksum);
     printBits(&checkSum, sizeof(parser->headerChecksum), 15, 0);
     fprintf(stdout, "CheckSum: %u\n", checkSum);
-    
+
     struct in_addr srcAddr, destAddr;
     srcAddr.s_addr = parser->srcIP;
     destAddr.s_addr = parser->destIP;
     printf("Source IP address: %s\n", inet_ntoa(srcAddr));
     printf("Destination IP address: %s\n", inet_ntoa(destAddr));
 
-    if(parser->protocol == 6){
+    if (parser->protocol == 6) {
         /*int tcpHeaderLen = etherHeaderLen + ipHeaderLen ;*/
         /*printTCPHeader(packetBody, tcpHeaderLen);*/
-    }else if(parser->protocol == 17){
+    } else if (parser->protocol == 17) {
         printUDPHeader(packetBody, (etherHeaderLen + ipHeaderLen));
-    }else{
+    } else {
         fprintf(stdout, "Protocol is : %i", parser->protocol);
         fprintf(stderr, "Not supported Protocol\n");
-
     }
 }
 
@@ -346,7 +349,7 @@ void packetHandler(u_char  *args, const struct pcap_pkthdr *packetHeader, const 
         fprintf(stdout, "------------------------------------\n");
     }else if(etherHeaderType == ETHERTYPE_ARP){
         fprintf(stdout, "This packet is an ARP packet\n");
-        printARPHeader(packetBody);
+        /*printARPHeader(packetBody);*/
         fprintf(stdout, "------------------------------------\n");
     }else if(etherHeaderType == ETHERTYPE_REVARP){
         fprintf(stdout, "This packet is a Reverse ARP  packet\n");

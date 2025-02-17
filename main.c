@@ -1,4 +1,3 @@
-#include "./protocols.h"
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <pcap.h>
@@ -11,6 +10,7 @@
 #include <sys/types.h>
 #include <net/ethernet.h>
 #include <netinet/tcp.h>
+#include "./protocols.h"
 
 // Function to print the LinkedList
 void printLinkedList(pcap_if_t *list ){

@@ -70,6 +70,19 @@ void printBits(void *someint , int size, int numberOfBitsToPrint, int offSet){
     /*printf("\n");*/
 }
 
+
+
+void printDNSHeader(const u_char *packetBody, int udpHeaderLen){
+    const u_char *dnsHeader = packetBody + udpHeaderLen;
+    HeaderDNS_t *dnsheader = (HeaderDNS_t *) dnsHeader;
+    fprintf(stdout, "Packet ID: %u\n", ntohs(dnsheader->id));
+    printBits(&dnsheader->flags, sizeof(dnsheader->flags), 15, 0);
+    fprintf(stdout, "flags: \n");
+    fprintf(stdout, "Qdcount : %u\n", ntohs(dnsheader->qdcount));
+    fprintf(stdout, "ancount:  %u\n", ntohs(dnsheader->ancount));
+    fprintf(stdout, "nscount : %u\n", ntohs(dnsheader->nscount));
+    fprintf(stdout, "arcount : %u\n", ntohs(dnsheader->arcount));
+}
 void printTCPHeader(const u_char *packetBody , int ethIpHeaderLen){
     const u_char *tcpHeader = packetBody + ethIpHeaderLen;
     TCPHeader_t *tcp = (TCPHeader_t *) tcpHeader;
@@ -147,6 +160,11 @@ void printUDPHeader(const u_char *packetBody, int ethIpHeaderLen){
     if (ntohs(udp->srcPort) == 68 || ntohs(udp->srcPort) == 67) {
         fprintf(stdout, "This is a DHCP packet\n");
         printDHCPHeader(packetBody,  udpHeaderSize);
+    }
+
+    if (ntohs(udp->srcPort) == 53 || ntohs(udp->srcPort) == 53) {
+        fprintf(stdout, "This is a DHCP packet\n");
+        printDNSHeader(packetBody,  udpHeaderSize);
     }
     return ;
 }

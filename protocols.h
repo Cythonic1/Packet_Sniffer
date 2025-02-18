@@ -99,7 +99,7 @@ typedef struct HeaderDNS {
 
 
 
-}HeaderDNS;
+}HeaderDNS_t;
 
 typedef struct QuestionDNS {
     // Find a way to get the len before parsing
@@ -122,7 +122,7 @@ typedef struct ResourceRecord {
 }ResourceRecord;
 
 typedef struct DNS {
-    HeaderDNS header;
+    HeaderDNS_t header;
     QuestionDNS *questions;    
     ResourceRecord *answers;   
     ResourceRecord *authorities; 

@@ -70,18 +70,56 @@ void printBits(void *someint , int size, int numberOfBitsToPrint, int offSet){
     /*printf("\n");*/
 }
 
+unsigned char *parserDomainName(const u_char *packet, int offset){
 
+    const u_char *startingPointString = packet + offset;
+    // printf("The startingPointString is : %02x")
+    int lenCounter = 0;
+    int lableCounter = 0;
+    while(startingPointString[offset] != 0){
+        int lableLen = startingPointString[offset] ;
+        printf("Lable len is %02x \n", (unsigned char)lableLen);
+        lenCounter += lableLen;
+        lableCounter += 1;
+        offset += (lableLen+1);
+    }
+    printf("The len of the question is : %d",lenCounter );
+    return NULL;
+}
+void paresDNSQuestionHeader(uint16_t numberOfQuestion,const u_char *packetBody, int questionStartAddress, DNS_t *dns ){
+    // There is a bit before the name indecate the size of the name
+    // so we need to read that byte first in order to parse everything.
+    dns->questions = (QuestionDNS *) malloc(sizeof(QuestionDNS) * numberOfQuestion);
+    if(dns->questions == NULL){
+        perror("Error while allocating for questions\n");
+        return ;
+    }
+    printf("The number of question is :%u \n", numberOfQuestion);
+    const u_char *dnsQuestionHeader = packetBody + questionStartAddress;
+
+    // printf(" Question name len : %d", dnsQuestionHeader[0]);
+    parserDomainName(dnsQuestionHeader, 0);
+    free(dns->questions);
+    return;
+}
 
 void printDNSHeader(const u_char *packetBody, int udpHeaderLen){
     const u_char *dnsHeader = packetBody + udpHeaderLen;
-    HeaderDNS_t *dnsheader = (HeaderDNS_t *) dnsHeader;
-    fprintf(stdout, "Packet ID: %u\n", ntohs(dnsheader->id));
-    printBits(&dnsheader->flags, sizeof(dnsheader->flags), 15, 0);
-    fprintf(stdout, "flags: \n");
-    fprintf(stdout, "Qdcount : %u\n", ntohs(dnsheader->qdcount));
-    fprintf(stdout, "ancount:  %u\n", ntohs(dnsheader->ancount));
-    fprintf(stdout, "nscount : %u\n", ntohs(dnsheader->nscount));
-    fprintf(stdout, "arcount : %u\n", ntohs(dnsheader->arcount));
+    DNS_t *dns = (DNS_t *)malloc(sizeof(DNS_t));
+    if(dns == NULL){
+        perror("Error while allocating for dns\n");
+    }
+    dns->header = (HeaderDNS_t *) dnsHeader;
+    fprintf(stdout, "\tPacket ID: %u\n", ntohs(dns->header->id));
+    printBits(&dns->header->flags, sizeof(dns->header->flags), 15, 0);
+    fprintf(stdout, "\tflags: \n");
+    fprintf(stdout, "\tQdcount : %u\n", ntohs(dns->header->qdcount));
+    fprintf(stdout, "\tancount:  %u\n", ntohs(dns->header->ancount));
+    fprintf(stdout, "\tnscount : %u\n", ntohs(dns->header->nscount));
+    fprintf(stdout, "\tarcount : %u\n", ntohs(dns->header->arcount));
+    int questionStartAddress = udpHeaderLen + sizeof(HeaderDNS_t);
+    paresDNSQuestionHeader(ntohs(dns->header->qdcount), packetBody, questionStartAddress, dns);
+    free(dns);
 }
 void printTCPHeader(const u_char *packetBody , int ethIpHeaderLen){
     const u_char *tcpHeader = packetBody + ethIpHeaderLen;
@@ -163,7 +201,7 @@ void printUDPHeader(const u_char *packetBody, int ethIpHeaderLen){
     }
 
     if (ntohs(udp->srcPort) == 53 || ntohs(udp->srcPort) == 53) {
-        fprintf(stdout, "This is a DHCP packet\n");
+        fprintf(stdout, "This is a DNS packet: \n");
         printDNSHeader(packetBody,  udpHeaderSize);
     }
     return ;

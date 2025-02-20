@@ -96,9 +96,6 @@ typedef struct HeaderDNS {
     uint16_t ancount;
     uint16_t nscount;
     uint16_t arcount;
-
-
-
 }HeaderDNS_t;
 
 typedef struct QuestionDNS {
@@ -122,7 +119,7 @@ typedef struct ResourceRecord {
 }ResourceRecord;
 
 typedef struct DNS {
-    HeaderDNS_t header;
+    HeaderDNS_t *header;
     QuestionDNS *questions;    
     ResourceRecord *answers;   
     ResourceRecord *authorities; 

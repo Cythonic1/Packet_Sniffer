@@ -69,61 +69,86 @@ void printBits(void *someint , int size, int numberOfBitsToPrint, int offSet){
     /*printf("\n");*/
 }
 
-unsigned char *parserDomainName(const u_char *packetBody, int offset){
+const u_char *parserDomainName(const u_char *packetBody){
 
-    packetBody = packetBody + offset;
+    int offset = 0;
     int lenCounter = 0;
     int lableCounter = 0;
     while(packetBody [offset] != 0){
         int lableLen = packetBody[offset] ;
-        printf("Lable len is %02x \n", (unsigned char)lableLen);
+        // printf("Lable len is %02x \n", (unsigned char)lableLen);
         lenCounter += lableLen;
         lableCounter += 1;
         offset += (lableLen+1);
     }
-    // char *domainName = (char *) malloc((sizeof(char) * lenCounter) + lableCounter + 1);
-    // if(domainName == NULL){
-    //     perror("Error while allocating for the domainName\n");
-    //     return NULL;
-    // }
-    // printf("The len of the question is : %d\n",lenCounter );
-    // int offsetBack = 0;
 
-    // while(packetBody[offsetBack] != 0){
-    //     int lableLen = packetBody[offsetBack] ;
-    //     printf("Lable len is %02x \n", (unsigned char)lableLen);
-    //     lenCounter += lableLen;
-    //     strncpy(domainName, packetBody, lableLen);
-    //     // You could remove the need for the lable counter
-    //     // if you do it this way becuase now on every index the len will be the index zero
-    //     // seince we add the lable len for the pointer it self we return the pointer then we will
-    //     // have the packetBody starting from the index of the qClass
-    //     packetBody+= lableLen;
-    //     offsetBack += (lableLen+1);
-    // }
+    // printf("The len of the question is : %02x\n",lenCounter );
+    // Size of total length + the '.' also + null terminator
+    char *domainName = (char *) calloc(lenCounter + lableCounter + 1, sizeof(char));
+    if(domainName == NULL){
+        perror("Error while allocating for the domainName\n");
+        return NULL;
+    }
+    int offsetBack = 0;
 
-    return NULL;
+    while(packetBody[0] != 0){
+        int lableLen = packetBody[0] ;
+        // printf("Lable len is %02x \n", (unsigned char)lableLen);
+        lenCounter += lableLen;
+        strncat(domainName, (char *) (packetBody + 1), lableLen);
+        if(packetBody[0] != 0 ){
+            strncat(domainName, ".",1);
+        }
+        // You could remove the need for the lable counter
+        // if you do it this way becuase now on every index the len will be the index zero
+        // seince we add the lable len for the pointer it self we return the pointer then we will
+        // have the packetBody starting from the index of the qClass
+        offsetBack += (lableLen+1);
+        packetBody += (lableLen + 1);
+
+    }
+    // pass the null terminator in the header.
+    packetBody += 1;
+    offsetBack += lableCounter;
+    domainName[offsetBack] = '\0';
+    printf("Domain name is :%s\n", domainName);
+    // For the class and type of now .
+    
+    fprintf(stdout, "Qtype : %u\n", ntohs(*(uint16_t *) packetBody));
+    packetBody = packetBody + 2;
+    fprintf(stdout, "Qclass : %u\n", ntohs(*(uint16_t *) packetBody));
+    packetBody = packetBody + 2;
+    free(domainName);
+    printf("Address of packetBody : %08x\n", *packetBody);
+
+
+    return packetBody;  // Return updated pointer
 }
+
 void paresDNSQuestionHeader(uint16_t numberOfQuestion,const u_char *packetBody,  DNS_t *dns ){
     // There is a bit before the name indecate the size of the name
     // so we need to read that byte first in order to parse everything.
-    dns->questions = (QuestionDNS *) malloc(sizeof(QuestionDNS) * numberOfQuestion);
-    if(dns->questions == NULL){
-        perror("Error while allocating for questions\n");
-        return ;
-    }
+    // dns->questions = (QuestionDNS *) malloc(sizeof(QuestionDNS) * numberOfQuestion);
+    // if(dns->questions == NULL){
+    //     perror("Error while allocating for questions\n");
+    //     return;
+    // }
     printf("The number of question is :%u \n", numberOfQuestion);
 
     // printf(" Question name len : %d", dnsQuestionHeader[0]);
-    parserDomainName(packetBody, 0);
-    free(dns->questions);
+    for (int i = 0; i < numberOfQuestion; i++){
+        packetBody = parserDomainName(packetBody);
+    }
+    // free(dns->questions);
     return;
 }
+
 
 void printDNSHeader(const u_char *packetBody){
     DNS_t *dns = (DNS_t *)malloc(sizeof(DNS_t));
     if(dns == NULL){
         perror("Error while allocating for dns\n");
+        return;
     }
     dns->header = (HeaderDNS_t *) packetBody;
     fprintf(stdout, "\tPacket ID: %u\n", ntohs(dns->header->id));
@@ -134,7 +159,10 @@ void printDNSHeader(const u_char *packetBody){
     fprintf(stdout, "\tnscount : %u\n", ntohs(dns->header->nscount));
     fprintf(stdout, "\tarcount : %u\n", ntohs(dns->header->arcount));
     packetBody = packetBody + sizeof(HeaderDNS_t);
-    paresDNSQuestionHeader(ntohs(dns->header->qdcount), packetBody ,dns);
+
+    if(ntohs(dns->header->qdcount) > 0){
+        paresDNSQuestionHeader(ntohs(dns->header->qdcount), packetBody ,dns);
+    }
     free(dns);
 }
 void printTCPHeader(const u_char *packetBody ){
@@ -216,7 +244,7 @@ void printUDPHeader(const u_char *packetBody ){
         printDHCPHeader(packetBody);
     }
 
-    if (ntohs(udp->srcPort) == 53 || ntohs(udp->srcPort) == 53) {
+    if (ntohs(udp->srcPort) == 53 || ntohs(udp->destPort) == 53) {
         fprintf(stdout, "This is a DNS packet: \n");
         printDNSHeader(packetBody);
     }
@@ -277,7 +305,7 @@ void printIpHeader(const u_char *packetBody) {
     fprintf(stdout, " ihl: %u (Header Length: %u bytes)\n",
             (parser->versionAndIhl & 0x0F), (parser->versionAndIhl & 0x0F) * 4);
 
-    printBits(&parser->versionAndIhl, sizeof(parser->versionAndIhl), 3, 3);
+    printBits(&parser->versionAndIhl, sizeof(parser->versionAndIhl), 3, 2);
     fprintf(stdout, "Ip version: %u\n",
             parser->versionAndIhl >> 4); // the ">>" is used to get the first 4 bits
 
@@ -321,7 +349,7 @@ void printIpHeader(const u_char *packetBody) {
     
     if (parser->protocol == 6) {
         /*int tcpHeaderLen = etherHeaderLen + ipHeaderLen ;*/
-        printTCPHeader(packetBody);
+        // printTCPHeader(packetBody);
     } else if (parser->protocol == 17) {
         printUDPHeader(packetBody);
     } else {

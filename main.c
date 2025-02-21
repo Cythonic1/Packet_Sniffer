@@ -30,7 +30,6 @@ void printPacketHeader(const u_char *packet, struct pcap_pkthdr packetHeader){
     fprintf(stdout, "Packet Total Length %d\n",packetHeader.len);
 }
 
-
 void printMacAddress(uint8_t mac[], size_t size){
     for (int i = 0; i < size ; i++) {
         if(i == (size - 1)){
@@ -70,23 +69,42 @@ void printBits(void *someint , int size, int numberOfBitsToPrint, int offSet){
     /*printf("\n");*/
 }
 
-unsigned char *parserDomainName(const u_char *packet, int offset){
+unsigned char *parserDomainName(const u_char *packetBody, int offset){
 
-    const u_char *startingPointString = packet + offset;
-    // printf("The startingPointString is : %02x")
+    packetBody = packetBody + offset;
     int lenCounter = 0;
     int lableCounter = 0;
-    while(startingPointString[offset] != 0){
-        int lableLen = startingPointString[offset] ;
+    while(packetBody [offset] != 0){
+        int lableLen = packetBody[offset] ;
         printf("Lable len is %02x \n", (unsigned char)lableLen);
         lenCounter += lableLen;
         lableCounter += 1;
         offset += (lableLen+1);
     }
-    printf("The len of the question is : %d",lenCounter );
+    // char *domainName = (char *) malloc((sizeof(char) * lenCounter) + lableCounter + 1);
+    // if(domainName == NULL){
+    //     perror("Error while allocating for the domainName\n");
+    //     return NULL;
+    // }
+    // printf("The len of the question is : %d\n",lenCounter );
+    // int offsetBack = 0;
+
+    // while(packetBody[offsetBack] != 0){
+    //     int lableLen = packetBody[offsetBack] ;
+    //     printf("Lable len is %02x \n", (unsigned char)lableLen);
+    //     lenCounter += lableLen;
+    //     strncpy(domainName, packetBody, lableLen);
+    //     // You could remove the need for the lable counter
+    //     // if you do it this way becuase now on every index the len will be the index zero
+    //     // seince we add the lable len for the pointer it self we return the pointer then we will
+    //     // have the packetBody starting from the index of the qClass
+    //     packetBody+= lableLen;
+    //     offsetBack += (lableLen+1);
+    // }
+
     return NULL;
 }
-void paresDNSQuestionHeader(uint16_t numberOfQuestion,const u_char *packetBody, int questionStartAddress, DNS_t *dns ){
+void paresDNSQuestionHeader(uint16_t numberOfQuestion,const u_char *packetBody,  DNS_t *dns ){
     // There is a bit before the name indecate the size of the name
     // so we need to read that byte first in order to parse everything.
     dns->questions = (QuestionDNS *) malloc(sizeof(QuestionDNS) * numberOfQuestion);
@@ -95,21 +113,19 @@ void paresDNSQuestionHeader(uint16_t numberOfQuestion,const u_char *packetBody, 
         return ;
     }
     printf("The number of question is :%u \n", numberOfQuestion);
-    const u_char *dnsQuestionHeader = packetBody + questionStartAddress;
 
     // printf(" Question name len : %d", dnsQuestionHeader[0]);
-    parserDomainName(dnsQuestionHeader, 0);
+    parserDomainName(packetBody, 0);
     free(dns->questions);
     return;
 }
 
-void printDNSHeader(const u_char *packetBody, int udpHeaderLen){
-    const u_char *dnsHeader = packetBody + udpHeaderLen;
+void printDNSHeader(const u_char *packetBody){
     DNS_t *dns = (DNS_t *)malloc(sizeof(DNS_t));
     if(dns == NULL){
         perror("Error while allocating for dns\n");
     }
-    dns->header = (HeaderDNS_t *) dnsHeader;
+    dns->header = (HeaderDNS_t *) packetBody;
     fprintf(stdout, "\tPacket ID: %u\n", ntohs(dns->header->id));
     printBits(&dns->header->flags, sizeof(dns->header->flags), 15, 0);
     fprintf(stdout, "\tflags: \n");
@@ -117,13 +133,13 @@ void printDNSHeader(const u_char *packetBody, int udpHeaderLen){
     fprintf(stdout, "\tancount:  %u\n", ntohs(dns->header->ancount));
     fprintf(stdout, "\tnscount : %u\n", ntohs(dns->header->nscount));
     fprintf(stdout, "\tarcount : %u\n", ntohs(dns->header->arcount));
-    int questionStartAddress = udpHeaderLen + sizeof(HeaderDNS_t);
-    paresDNSQuestionHeader(ntohs(dns->header->qdcount), packetBody, questionStartAddress, dns);
+    packetBody = packetBody + sizeof(HeaderDNS_t);
+    paresDNSQuestionHeader(ntohs(dns->header->qdcount), packetBody ,dns);
     free(dns);
 }
-void printTCPHeader(const u_char *packetBody , int ethIpHeaderLen){
-    const u_char *tcpHeader = packetBody + ethIpHeaderLen;
-    TCPHeader_t *tcp = (TCPHeader_t *) tcpHeader;
+void printTCPHeader(const u_char *packetBody ){
+
+    TCPHeader_t *tcp = (TCPHeader_t *) packetBody;
 
     fprintf(stdout, "Source Port: %u\n", ntohs(tcp->srcPort));
     fprintf(stdout, "Destinitation Port: %u\n", ntohs(tcp->destPort));
@@ -157,9 +173,8 @@ void printTCPHeader(const u_char *packetBody , int ethIpHeaderLen){
     return ;
 }
 
-void printDHCPHeader(const u_char *packetBody , int32_t udpHeaderSize){
-    const u_char *dhcpHeader = packetBody + udpHeaderSize;
-    DHCP_t *dhcp = (DHCP_t *) dhcpHeader;
+void printDHCPHeader(const u_char *packetBody ){
+    DHCP_t *dhcp = (DHCP_t *) packetBody;
     fprintf(stdout, "messages Type: %u\n", dhcp->op);
     fprintf(stdout, "Hardware Type: %u\n", dhcp->htype);
     fprintf(stdout, "Hardware Address Length : %u\n", dhcp->hlen);
@@ -187,29 +202,31 @@ void printDHCPHeader(const u_char *packetBody , int32_t udpHeaderSize){
 
 }
 
-void printUDPHeader(const u_char *packetBody, int ethIpHeaderLen){
-    const u_char *udpHeader = packetBody + ethIpHeaderLen;
-    UDPHeader_t *udp = (UDPHeader_t *) udpHeader;
-    uint16_t udpHeaderSize = ethIpHeaderLen + sizeof(UDPHeader_t);
+void printUDPHeader(const u_char *packetBody ){
+
+    UDPHeader_t *udp = (UDPHeader_t *) packetBody;
+    uint16_t udpHeaderSize = sizeof(UDPHeader_t);
     fprintf(stdout, "Source Port: %u\n", ntohs(udp->srcPort));
     fprintf(stdout, "Destinitation Port: %u\n", ntohs(udp->destPort));
     fprintf(stdout, "Length: %u\n", ntohs(udp->length));
     fprintf(stdout, "CheckSum  : %u\n", ntohs(udp->checkSum));
+    packetBody += udpHeaderSize;
     if (ntohs(udp->srcPort) == 68 || ntohs(udp->srcPort) == 67) {
         fprintf(stdout, "This is a DHCP packet\n");
-        printDHCPHeader(packetBody,  udpHeaderSize);
+        printDHCPHeader(packetBody);
     }
 
     if (ntohs(udp->srcPort) == 53 || ntohs(udp->srcPort) == 53) {
         fprintf(stdout, "This is a DNS packet: \n");
-        printDNSHeader(packetBody,  udpHeaderSize);
+        printDNSHeader(packetBody);
     }
     return ;
 }
 
 void printARPHeader(const u_char *packetBody){
-    const u_char *arpHeader = packetBody + sizeof(struct ether_header);
-    ARP_t *arp = (ARP_t *) arpHeader;
+    packetBody = packetBody + sizeof(struct ether_header);
+    ARP_t *arp = (ARP_t *) packetBody;
+
     struct in_addr srcAddr, destAddr;
 
     fprintf(stdout, "Hardware Type : %u\n", ntohs(arp->HardwareType));
@@ -237,26 +254,25 @@ void printARPHeader(const u_char *packetBody){
 
 
 void printIpHeader(const u_char *packetBody) {
-    const u_char *ipHeader;
     int etherHeaderLen = sizeof(struct ether_header);
-    ipHeader = packetBody + etherHeaderLen;
+    packetBody = packetBody + etherHeaderLen;
     // The example below shows how we can extract the lower 4 bits from the first
     // byte in the IP header example if we have 01010011 the results gonna be
     // 0011.
-    int ipHeaderLen = ((*ipHeader) & 0x0F);
+    int ipHeaderLen = ((*packetBody) & 0x0F);
     printf("The ip header length in 32-bit %d;\n", ipHeaderLen);
     printf("The ip header length in words %d;\n", ipHeaderLen * 4);
     // we mutilplay by 4 to change from 32 bit to words
     ipHeaderLen = ipHeaderLen * 4;
-    int protocolType = *(ipHeader + 9);
+    int protocolType = *(packetBody + 9);
 
-    fprintf(stdout, "The ip header type : %d\n", (*(ipHeader + 9)));
+    fprintf(stdout, "The ip header type : %d\n", (*(packetBody + 9)));
     // conver it into switch for better managment
     if (protocolType != IPPROTO_TCP) {
         fprintf(stderr, "This packet it not TCP packet\n");
     }
 
-    IPHeader_t *parser = (IPHeader_t *)ipHeader;
+    IPHeader_t *parser = (IPHeader_t *)packetBody;
     printBits(&parser->versionAndIhl, sizeof(parser->versionAndIhl), 3, 0);
     fprintf(stdout, " ihl: %u (Header Length: %u bytes)\n",
             (parser->versionAndIhl & 0x0F), (parser->versionAndIhl & 0x0F) * 4);
@@ -301,11 +317,13 @@ void printIpHeader(const u_char *packetBody) {
     printf("Source IP address: %s\n", inet_ntoa(srcAddr));
     printf("Destination IP address: %s\n", inet_ntoa(destAddr));
 
+    packetBody = packetBody + ipHeaderLen;
+    
     if (parser->protocol == 6) {
         /*int tcpHeaderLen = etherHeaderLen + ipHeaderLen ;*/
-        /*printTCPHeader(packetBody, tcpHeaderLen);*/
+        printTCPHeader(packetBody);
     } else if (parser->protocol == 17) {
-        printUDPHeader(packetBody, (etherHeaderLen + ipHeaderLen));
+        printUDPHeader(packetBody);
     } else {
         fprintf(stdout, "Protocol is : %i", parser->protocol);
         fprintf(stderr, "Not supported Protocol\n");

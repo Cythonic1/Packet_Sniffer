@@ -68,78 +68,79 @@ void printBits(void *someint , int size, int numberOfBitsToPrint, int offSet){
     }
     /*printf("\n");*/
 }
-
-const u_char *parserDomainName(const u_char *packetBody){
-
+const u_char *parserDomainName(const u_char *packetBody, char **domainNameOut) {
     int offset = 0;
     int lenCounter = 0;
-    int lableCounter = 0;
-    while(packetBody [offset] != 0){
-        int lableLen = packetBody[offset] ;
-        // printf("Lable len is %02x \n", (unsigned char)lableLen);
-        lenCounter += lableLen;
-        lableCounter += 1;
-        offset += (lableLen+1);
+    int labelCounter = 0;
+
+    // First pass: Calculate the total length of the domain name
+    while (packetBody[offset] != 0) {
+        int labelLen = packetBody[offset];
+        lenCounter += labelLen;
+        labelCounter += 1;
+        offset += (labelLen + 1);
     }
 
-    // printf("The len of the question is : %02x\n",lenCounter );
-    // Size of total length + the '.' also + null terminator
-    char *domainName = (char *) calloc(lenCounter + lableCounter + 1, sizeof(char));
-    if(domainName == NULL){
+    // Allocate memory for the domain name
+    *domainNameOut = (char *)calloc(lenCounter + labelCounter + 1, sizeof(char));
+    if (*domainNameOut == NULL) {
         perror("Error while allocating for the domainName\n");
         return NULL;
     }
-    int offsetBack = 0;
 
-    while(packetBody[0] != 0){
-        int lableLen = packetBody[0] ;
-        // printf("Lable len is %02x \n", (unsigned char)lableLen);
-        lenCounter += lableLen;
-        strncat(domainName, (char *) (packetBody + 1), lableLen);
-        if(packetBody[0] != 0 ){
-            strncat(domainName, ".",1);
+    // Second pass: Construct the domain name
+    offset = 0;
+    while (packetBody[offset] != 0) {
+        int labelLen = packetBody[offset];
+        strncat(*domainNameOut, (char *)(packetBody + offset + 1), labelLen);
+        offset += (labelLen + 1);
+        if (packetBody[offset] != 0) {
+            strncat(*domainNameOut, ".", 1);
         }
-        // You could remove the need for the lable counter
-        // if you do it this way becuase now on every index the len will be the index zero
-        // seince we add the lable len for the pointer it self we return the pointer then we will
-        // have the packetBody starting from the index of the qClass
-        offsetBack += (lableLen+1);
-        packetBody += (lableLen + 1);
-
     }
-    // pass the null terminator in the header.
-    packetBody += 1;
-    offsetBack += lableCounter;
-    domainName[offsetBack] = '\0';
-    printf("Domain name is :%s\n", domainName);
-    // For the class and type of now .
-    
-    fprintf(stdout, "Qtype : %u\n", ntohs(*(uint16_t *) packetBody));
-    packetBody = packetBody + 2;
-    fprintf(stdout, "Qclass : %u\n", ntohs(*(uint16_t *) packetBody));
-    packetBody = packetBody + 2;
-    free(domainName);
-    printf("Address of packetBody : %08x\n", *packetBody);
 
+    // Move past the null terminator
+    offset += 1;
 
-    return packetBody;  // Return updated pointer
+    // Return the updated packetBody pointer
+    return packetBody + offset;
 }
 
-void paresDNSQuestionHeader(uint16_t numberOfQuestion,const u_char *packetBody,  DNS_t *dns ){
-    // There is a bit before the name indecate the size of the name
-    // so we need to read that byte first in order to parse everything.
-    // dns->questions = (QuestionDNS *) malloc(sizeof(QuestionDNS) * numberOfQuestion);
-    // if(dns->questions == NULL){
-    //     perror("Error while allocating for questions\n");
-    //     return;
-    // }
-    printf("The number of question is :%u \n", numberOfQuestion);
-
-    // printf(" Question name len : %d", dnsQuestionHeader[0]);
-    for (int i = 0; i < numberOfQuestion; i++){
-        packetBody = parserDomainName(packetBody);
+void paresDNSQuestionHeader(uint16_t numberOfQuestion, const u_char *packetBody, DNS_t *dns) {
+    dns->questions = (QuestionDNS_t *)malloc(sizeof(QuestionDNS_t) * numberOfQuestion);
+    if (dns->questions == NULL) {
+        perror("Error while allocating memory for questions\n");
+        return;
     }
-    // free(dns->questions);
+
+    printf("The number of questions is: %u\n", numberOfQuestion);
+
+    for (int i = 0; i < numberOfQuestion; i++) {
+        // passing the qname to the paresDomainName so that we can save the value 
+        // for the answers in case of compression.
+        packetBody = parserDomainName(packetBody, &dns->questions[i].qname);
+        if (packetBody == NULL) {
+            fprintf(stderr, "Error parsing domain name\n");
+            free(dns->questions);
+            return;
+        }
+
+        // Parse Qtype and Qclass
+        dns->questions[i].qtype = ntohs(*(uint16_t *)packetBody);
+        packetBody += 2;
+        dns->questions[i].qclass = ntohs(*(uint16_t *)packetBody);
+        packetBody += 2;
+
+        // Print the parsed values
+        fprintf(stdout, "The Domain Name is: %s\n", dns->questions[i].qname);
+        fprintf(stdout, "Qtype: %u\n", dns->questions[i].qtype);
+        fprintf(stdout, "Qclass: %u\n", dns->questions[i].qclass);
+
+        // Free the domain name if it's no longer needed
+        free(dns->questions[i].qname);
+    }
+
+    free(dns->questions);
     return;
 }
 

@@ -100,11 +100,11 @@ typedef struct HeaderDNS {
 
 typedef struct QuestionDNS {
     // Find a way to get the len before parsing
-    unsigned char* qname;
+    char *qname;
     uint16_t qtype;
     uint16_t qclass;
 
-}QuestionDNS;
+}QuestionDNS_t;
 
 /* This reprsent the answer, authority, and additional headers
     as they all share the same headers */
@@ -120,7 +120,7 @@ typedef struct ResourceRecord {
 
 typedef struct DNS {
     HeaderDNS_t *header;
-    QuestionDNS *questions;    
+    QuestionDNS_t *questions;    
     ResourceRecord *answers;   
     ResourceRecord *authorities; 
     ResourceRecord *additionals; 

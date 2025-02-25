@@ -3,6 +3,9 @@
 #include <string.h>
 #include <sys/types.h>
 
+#define MASK_FIRST_FOUR_BITS 0xF0
+#define MASK_LAST_FOUR_BITS 0x0F
+
 typedef struct IPHeader {
     uint8_t versionAndIhl;
     uint8_t tos;
@@ -89,6 +92,9 @@ typedef struct DHCP{
 
 
 
+
+#define POINTERCOMPRESSION 0xc0
+
 typedef struct HeaderDNS {
     uint16_t id;
     uint16_t flags;
@@ -110,7 +116,7 @@ typedef struct QuestionDNS {
     as they all share the same headers */
 
 typedef struct ResourceRecord {
-    unsigned char *name;
+    char *name;
     uint16_t type;
     uint16_t class_;
     uint32_t ttl;

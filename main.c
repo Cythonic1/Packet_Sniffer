@@ -1,7 +1,6 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <pcap.h>
-#include <pcap/pcap.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -68,10 +67,35 @@ void printBits(void *someint , int size, int numberOfBitsToPrint, int offSet){
     }
     /*printf("\n");*/
 }
+
+// void paresDNSAnswerHeader(int numberOfAnswers, const u_char *packetBody, DNS_t *dns ){
+//     dns->answers = (ResourceRecord *) malloc(sizeof(ResourceRecord));
+//     free(dns->answers)
+//     return ;
+// }
+
+
+int TypeOfCompression(uint16_t *bytes){
+    // The shift is just for cleaner values
+    uint8_t compressionTypeBits = (*bytes & 0xC0) >> 8 ;
+    int offset = 0;
+
+    switch (compressionTypeBits) {
+        case POINTERCOMPRESSION:
+                fprintf(stdout, "The packet is Pointer Compression");
+                offset = *bytes & 0x03FF;
+                return offset;
+            break;
+    }
+    return -1;
+}
+
 const u_char *parserDomainName(const u_char *packetBody, char **domainNameOut) {
     int offset = 0;
     int lenCounter = 0;
     int labelCounter = 0;
+    uint16_t *firstTwoBytes = (uint16_t *) packetBody;
+
 
     // First pass: Calculate the total length of the domain name
     while (packetBody[offset] != 0) {
@@ -163,6 +187,9 @@ void printDNSHeader(const u_char *packetBody){
 
     if(ntohs(dns->header->qdcount) > 0){
         paresDNSQuestionHeader(ntohs(dns->header->qdcount), packetBody ,dns);
+    }
+    if (ntohs(dns->header->arcount) > 0) {
+        paresDNSAnswerHeader(ntohs(dns->header->arcount), packetBody, dns);
     }
     free(dns);
 }
@@ -288,7 +315,7 @@ void printIpHeader(const u_char *packetBody) {
     // The example below shows how we can extract the lower 4 bits from the first
     // byte in the IP header example if we have 01010011 the results gonna be
     // 0011.
-    int ipHeaderLen = ((*packetBody) & 0x0F);
+    int ipHeaderLen = ((*packetBody) & MASK_LAST_FOUR_BITS);
     printf("The ip header length in 32-bit %d;\n", ipHeaderLen);
     printf("The ip header length in words %d;\n", ipHeaderLen * 4);
     // we mutilplay by 4 to change from 32 bit to words
@@ -304,7 +331,7 @@ void printIpHeader(const u_char *packetBody) {
     IPHeader_t *parser = (IPHeader_t *)packetBody;
     printBits(&parser->versionAndIhl, sizeof(parser->versionAndIhl), 3, 0);
     fprintf(stdout, " ihl: %u (Header Length: %u bytes)\n",
-            (parser->versionAndIhl & 0x0F), (parser->versionAndIhl & 0x0F) * 4);
+            (parser->versionAndIhl & MASK_LAST_FOUR_BITS), (parser->versionAndIhl & MASK_LAST_FOUR_BITS) * 4);
 
     printBits(&parser->versionAndIhl, sizeof(parser->versionAndIhl), 3, 2);
     fprintf(stdout, "Ip version: %u\n",
@@ -435,7 +462,7 @@ int main(int argc , char **argv){
     // ** Capture Live packets with the interface we have ** 
 
     pcap_t *handler;
-    const u_char *packet;
+    const u_char *packet = NULL;
     struct pcap_pkthdr packetHeader = {.caplen = 0, .len = 0, .ts = {.tv_sec = 0, .tv_usec = 0}};
     int packetCountLimit = 1;
     int packetTimeOut = 90000; // In milliseconds

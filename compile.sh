@@ -1,7 +1,7 @@
 #!/bin/bash
 
 
-clang ./main.c -lpcap -o main
+clang ./main.c -lpcap -Wall -Wextra -o main
 
 if [ $? -eq 0 ];then
     sudo ./main

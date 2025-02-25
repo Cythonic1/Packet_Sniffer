@@ -68,36 +68,43 @@ void printBits(void *someint , int size, int numberOfBitsToPrint, int offSet){
     /*printf("\n");*/
 }
 
-// void paresDNSAnswerHeader(int numberOfAnswers, const u_char *packetBody, DNS_t *dns ){
-//     dns->answers = (ResourceRecord *) malloc(sizeof(ResourceRecord));
-//     free(dns->answers)
-//     return ;
+
+
+// int TypeOfCompression(uint16_t bytes){
+//     // The shift is just for cleaner values
+//     uint8_t compressionTypeBits = (bytes & 0xC0) ;
+//     int offset = 0;
+//     fprintf(stdout, "%02x", compressionTypeBits);
+
+//     switch (compressionTypeBits) {
+//         case POINTERCOMPRESSION:
+//                 fprintf(stdout, "The packet is Pointer Compression");
+//                 offset = bytes & 0x03FF;
+//                 return offset;
+//             break;
+//     }
+//     return -1;
 // }
-
-
-int TypeOfCompression(uint16_t *bytes){
-    // The shift is just for cleaner values
-    uint8_t compressionTypeBits = (*bytes & 0xC0) >> 8 ;
-    int offset = 0;
-
-    switch (compressionTypeBits) {
-        case POINTERCOMPRESSION:
-                fprintf(stdout, "The packet is Pointer Compression");
-                offset = *bytes & 0x03FF;
-                return offset;
-            break;
+int TypeOfCompression(uint16_t bytes) {
+    printf("inside function %d\n, ", bytes);
+    if ((bytes & 0xC000) == 0xC000) { // Check top 2 bits
+        return bytes & 0x3FFF; // Return 14-bit offset
     }
     return -1;
 }
-
-const u_char *parserDomainName(const u_char *packetBody, char **domainNameOut) {
+const u_char *parserDomainName(const u_char *packetBody,  unsigned char **domainNameOut) {
     int offset = 0;
     int lenCounter = 0;
     int labelCounter = 0;
-    uint16_t *firstTwoBytes = (uint16_t *) packetBody;
+    uint16_t firstTwoBytes = ntohs(*(uint16_t *)packetBody);
+    int TypeOfCompressionNum = TypeOfCompression(firstTwoBytes);
 
 
     // First pass: Calculate the total length of the domain name
+    if( TypeOfCompressionNum != -1){
+        parserDomainName((packetBody - TypeOfCompressionNum), domainNameOut);
+        return  packetBody + 2;
+    }
     while (packetBody[offset] != 0) {
         int labelLen = packetBody[offset];
         lenCounter += labelLen;
@@ -106,7 +113,7 @@ const u_char *parserDomainName(const u_char *packetBody, char **domainNameOut) {
     }
 
     // Allocate memory for the domain name
-    *domainNameOut = (char *)calloc(lenCounter + labelCounter + 1, sizeof(char));
+    *domainNameOut = (unsigned char *)calloc(lenCounter + labelCounter + 1, sizeof(char));
     if (*domainNameOut == NULL) {
         perror("Error while allocating for the domainName\n");
         return NULL;
@@ -116,10 +123,10 @@ const u_char *parserDomainName(const u_char *packetBody, char **domainNameOut) {
     offset = 0;
     while (packetBody[offset] != 0) {
         int labelLen = packetBody[offset];
-        strncat(*domainNameOut, (char *)(packetBody + offset + 1), labelLen);
+        strncat((char *)*domainNameOut, ( char *)(packetBody + offset + 1), labelLen);
         offset += (labelLen + 1);
         if (packetBody[offset] != 0) {
-            strncat(*domainNameOut, ".", 1);
+            strncat((char *)*domainNameOut, ".", 1);
         }
     }
 
@@ -130,11 +137,40 @@ const u_char *parserDomainName(const u_char *packetBody, char **domainNameOut) {
     return packetBody + offset;
 }
 
-void paresDNSQuestionHeader(uint16_t numberOfQuestion, const u_char *packetBody, DNS_t *dns) {
+void paresDNSAnswerHeader(int numberOfAnswers, const u_char *packetBody, DNS_t *dns ){
+    dns->answers = (ResourceRecord *) malloc(sizeof(ResourceRecord));
+    if(dns->answers == NULL){
+        perror("Error while allocating for answers\n");
+        return;
+    }
+
+    for(int i = 0; i < numberOfAnswers; i++){
+        packetBody = parserDomainName(packetBody, &dns->answers[i].name);
+        fprintf(stdout, "Answer domain name is %s\n", (char *) dns->answers[i].name);
+        free(dns->answers[i].name);
+        dns->answers[i].type = ntohs(*(uint16_t *) packetBody);
+        fprintf(stdout, "Answer Type : %u\n", dns->answers[i].type);
+        packetBody += 2;
+        dns->answers[i].class_ = ntohs(*(uint16_t *) packetBody);
+        fprintf(stdout, "Answer class : %u\n", dns->answers[i].class_);
+        packetBody += 2;
+        dns->answers[i].ttl = ntohl(*(uint32_t *) packetBody);
+        fprintf(stdout, "Answer ttl : %u\n", dns->answers[i].ttl);
+        packetBody += 4;
+        dns->answers[i].rdlength = ntohs(*(uint16_t *) packetBody);
+        fprintf(stdout, "Answer Type : %u\n", dns->answers[i].rdlength);
+        packetBody += 2;
+        // dns->answers[i].rdata = (unsigned char *)malloc((dns->answers[i].rdlength * sizeof(unsigned char)) + 1);
+
+    }
+    free(dns->answers);
+    return ;
+}
+const u_char *paresDNSQuestionHeader(uint16_t numberOfQuestion, const u_char *packetBody, DNS_t *dns) {
     dns->questions = (QuestionDNS_t *)malloc(sizeof(QuestionDNS_t) * numberOfQuestion);
     if (dns->questions == NULL) {
         perror("Error while allocating memory for questions\n");
-        return;
+        return NULL;
     }
 
     printf("The number of questions is: %u\n", numberOfQuestion);
@@ -146,7 +182,7 @@ void paresDNSQuestionHeader(uint16_t numberOfQuestion, const u_char *packetBody,
         if (packetBody == NULL) {
             fprintf(stderr, "Error parsing domain name\n");
             free(dns->questions);
-            return;
+            return NULL;
         }
 
         // Parse Qtype and Qclass
@@ -165,7 +201,7 @@ void paresDNSQuestionHeader(uint16_t numberOfQuestion, const u_char *packetBody,
     }
 
     free(dns->questions);
-    return;
+    return packetBody;
 }
 
 
@@ -186,10 +222,10 @@ void printDNSHeader(const u_char *packetBody){
     packetBody = packetBody + sizeof(HeaderDNS_t);
 
     if(ntohs(dns->header->qdcount) > 0){
-        paresDNSQuestionHeader(ntohs(dns->header->qdcount), packetBody ,dns);
+        packetBody = paresDNSQuestionHeader(ntohs(dns->header->qdcount), packetBody ,dns);
     }
-    if (ntohs(dns->header->arcount) > 0) {
-        paresDNSAnswerHeader(ntohs(dns->header->arcount), packetBody, dns);
+    if (ntohs(dns->header->ancount) > 0) {
+        paresDNSAnswerHeader(ntohs(dns->header->ancount), packetBody, dns);
     }
     free(dns);
 }

@@ -106,7 +106,7 @@ typedef struct HeaderDNS {
 
 typedef struct QuestionDNS {
     // Find a way to get the len before parsing
-    char *qname;
+    unsigned char *qname;
     uint16_t qtype;
     uint16_t qclass;
 
@@ -116,7 +116,7 @@ typedef struct QuestionDNS {
     as they all share the same headers */
 
 typedef struct ResourceRecord {
-    char *name;
+    unsigned char *name;
     uint16_t type;
     uint16_t class_;
     uint32_t ttl;

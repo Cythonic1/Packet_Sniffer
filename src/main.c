@@ -70,164 +70,411 @@ void printBits(void *someint , int size, int numberOfBitsToPrint, int offSet){
 
 
 
-// int TypeOfCompression(uint16_t bytes){
-//     // The shift is just for cleaner values
-//     uint8_t compressionTypeBits = (bytes & 0xC0) ;
-//     int offset = 0;
-//     fprintf(stdout, "%02x", compressionTypeBits);
 
-//     switch (compressionTypeBits) {
-//         case POINTERCOMPRESSION:
-//                 fprintf(stdout, "The packet is Pointer Compression");
-//                 offset = bytes & 0x03FF;
-//                 return offset;
-//             break;
-//     }
-//     return -1;
-// }
-int TypeOfCompression(uint16_t bytes) {
-    printf("inside function %d\n, ", bytes);
-    if ((bytes & 0xC000) == 0xC000) { // Check top 2 bits
+int isCompressedLabel(uint16_t bytes) {
+    if ((bytes & 0xC000) == 0xC000) {
         return bytes & 0x3FFF; // Return 14-bit offset
     }
     return -1;
 }
-const u_char *parserDomainName(const u_char *packetBody,  unsigned char **domainNameOut) {
-    int offset = 0;
-    int lenCounter = 0;
-    int labelCounter = 0;
-    uint16_t firstTwoBytes = ntohs(*(uint16_t *)packetBody);
-    int TypeOfCompressionNum = TypeOfCompression(firstTwoBytes);
 
 
-    // First pass: Calculate the total length of the domain name
-    if( TypeOfCompressionNum != -1){
-        parserDomainName((packetBody - TypeOfCompressionNum), domainNameOut);
-        return  packetBody + 2;
-    }
-    while (packetBody[offset] != 0) {
-        int labelLen = packetBody[offset];
-        lenCounter += labelLen;
-        labelCounter += 1;
-        offset += (labelLen + 1);
-    }
-
-    // Allocate memory for the domain name
-    *domainNameOut = (unsigned char *)calloc(lenCounter + labelCounter + 1, sizeof(char));
-    if (*domainNameOut == NULL) {
-        perror("Error while allocating for the domainName\n");
-        return NULL;
+/*Simple explnation of this function
+ * First we getting packetBody which is the packet in the current state
+ * for example the packet after parsing the question header will start from
+ * the answer header and so one. 
+ * start of Packet is the beggning of the dns header which is getting from 
+ * parsing DNS header function. lastly a double pointer to where we want to save
+ * the domain name
+ *
+ * Function Flow:
+ * First we check if there  is any compression we handle it immediate
+*/
+const u_char *parseDomainName(const u_char *packetBody, const u_char *startOfPacket, unsigned char **domainNameOut) {
+    // Handle immediate compression case
+    if ((packetBody[0] & 0xC0) == 0xC0) {
+        uint16_t offset = ntohs(*(uint16_t *)packetBody) & 0x3FFF;
+        // 1100 1100 1100 1100
+        // 0011 1111 1111 1111
+        // Parse the name at the compression point
+        parseDomainName(startOfPacket + offset, startOfPacket, domainNameOut);
+        return packetBody + 2; // Skip the compression pointer (2 bytes)
     }
 
-    // Second pass: Construct the domain name
-    offset = 0;
-    while (packetBody[offset] != 0) {
-        int labelLen = packetBody[offset];
-        strncat((char *)*domainNameOut, ( char *)(packetBody + offset + 1), labelLen);
-        offset += (labelLen + 1);
-        if (packetBody[offset] != 0) {
-            strncat((char *)*domainNameOut, ".", 1);
+    // First pass: Calculate total length needed for domain name
+    int totalLen = 0;
+    int labelCount = 0;
+    const u_char *ptr = packetBody;
+    
+    while (*ptr != 0) {
+        // Check for compression pointer
+        if ((*ptr & 0xC0) == 0xC0) {
+            uint16_t offset = ntohs(*(uint16_t *)ptr) & 0x3FFF;
+            // We need to follow the compression pointer
+            const u_char *targetPtr = startOfPacket + offset;
+            
+            // Continue counting from the compression target
+            while (*targetPtr != 0) {
+                if ((*targetPtr & 0xC0) == 0xC0) {
+                    // Handle nested compression
+                    uint16_t nestedOffset = ntohs(*(uint16_t *)targetPtr) & 0x3FFF;
+                    targetPtr = startOfPacket + nestedOffset;
+                    continue;
+                }
+                
+                int labelLen = *targetPtr;
+                totalLen += labelLen;
+                labelCount++;
+                targetPtr += (labelLen + 1);
+            }
+            
+            ptr += 2; // Skip compression pointer
+            break;
         }
+        
+        int labelLen = *ptr;
+        totalLen += labelLen;
+        labelCount++;
+        ptr += (labelLen + 1);
     }
 
-    // Move past the null terminator
-    offset += 1;
-
-    // Return the updated packetBody pointer
-    return packetBody + offset;
-}
-
-void paresDNSAnswerHeader(int numberOfAnswers, const u_char *packetBody, DNS_t *dns ){
-    dns->answers = (ResourceRecord *) malloc(sizeof(ResourceRecord));
-    if(dns->answers == NULL){
-        perror("Error while allocating for answers\n");
-        return;
-    }
-
-    for(int i = 0; i < numberOfAnswers; i++){
-        packetBody = parserDomainName(packetBody, &dns->answers[i].name);
-        fprintf(stdout, "Answer domain name is %s\n", (char *) dns->answers[i].name);
-        free(dns->answers[i].name);
-        dns->answers[i].type = ntohs(*(uint16_t *) packetBody);
-        fprintf(stdout, "Answer Type : %u\n", dns->answers[i].type);
-        packetBody += 2;
-        dns->answers[i].class_ = ntohs(*(uint16_t *) packetBody);
-        fprintf(stdout, "Answer class : %u\n", dns->answers[i].class_);
-        packetBody += 2;
-        dns->answers[i].ttl = ntohl(*(uint32_t *) packetBody);
-        fprintf(stdout, "Answer ttl : %u\n", dns->answers[i].ttl);
-        packetBody += 4;
-        dns->answers[i].rdlength = ntohs(*(uint16_t *) packetBody);
-        fprintf(stdout, "Answer Type : %u\n", dns->answers[i].rdlength);
-        packetBody += 2;
-        // dns->answers[i].rdata = (unsigned char *)malloc((dns->answers[i].rdlength * sizeof(unsigned char)) + 1);
-
-    }
-    free(dns->answers);
-    return ;
-}
-const u_char *paresDNSQuestionHeader(uint16_t numberOfQuestion, const u_char *packetBody, DNS_t *dns) {
-    dns->questions = (QuestionDNS_t *)malloc(sizeof(QuestionDNS_t) * numberOfQuestion);
-    if (dns->questions == NULL) {
-        perror("Error while allocating memory for questions\n");
+    // Allocate memory for domain name (length + dots + null terminator)
+    *domainNameOut = (unsigned char *)calloc(totalLen + labelCount, sizeof(char));
+    if (*domainNameOut == NULL) {
+        perror("Error allocating memory for domain name");
         return NULL;
     }
 
-    printf("The number of questions is: %u\n", numberOfQuestion);
 
-    for (int i = 0; i < numberOfQuestion; i++) {
-        // passing the qname to the paresDomainName so that we can save the value 
-        // for the answers in case of compression.
-        packetBody = parserDomainName(packetBody, &dns->questions[i].qname);
+    // Construct the domain it self
+    ptr = packetBody;
+    char *outPtr = (char *)*domainNameOut;
+    int isFirstLabel = 1;
+    
+    while (*ptr != 0) {
+        // IF the pointer is compress 
+        if ((*ptr & 0xC0) == 0xC0) {
+            uint16_t offset = ntohs(*(uint16_t *)ptr) & 0x3FFF;
+            const u_char *targetPtr = startOfPacket + offset;
+            
+            // To check for contiues lables and nested pointers
+            int isFirstCompressedLabel = 1;
+            
+            while (*targetPtr != 0) {
+                if ((*targetPtr & 0xC0) == 0xC0) {
+                    // Handle nested compression
+                    uint16_t nestedOffset = ntohs(*(uint16_t *)targetPtr) & 0x3FFF;
+                    targetPtr = startOfPacket + nestedOffset;
+                    continue;
+                }
+                
+                int labelLen = *targetPtr;
+                
+                // Add dot between labels
+                // if (!isFirstLabel && !isFirstCompressedLabel) {
+                //     *outPtr++ = '.';
+                // }
+                *outPtr++ = '.';
+                // Copy label content
+                memcpy(outPtr, targetPtr + 1, labelLen);
+                outPtr += labelLen;
+                targetPtr += (labelLen + 1);
+                
+                isFirstLabel = 0;
+                isFirstCompressedLabel = 0;
+            }
+            
+            ptr += 2; // Skip compression pointer
+            break;
+        }
+        
+        int labelLen = *ptr;
+        
+        // Add dot between labels
+        if (!isFirstLabel) {
+            *outPtr++ = '.';
+        }
+        
+        // *outPtr++ = '.';
+        // Copy label content
+        memcpy(outPtr, ptr + 1, labelLen);
+        outPtr += labelLen;
+        ptr += (labelLen + 1);
+        
+        isFirstLabel = 0;
+    }
+    
+    *outPtr = '\0'; // Null-terminate the string
+    
+    // Move past the null terminator if we didn't use compression
+    if (*ptr == 0) {
+        ptr++;
+    }
+    
+    return ptr;
+}
+
+const u_char *parseDNSQuestions(uint16_t numberOfQuestions, const u_char *packetBody, 
+                               const u_char *startOfPacket, DNS_t *dns) {
+    if (numberOfQuestions == 0) {
+        return packetBody;
+    }
+    
+    dns->questions = (QuestionDNS_t *)calloc(numberOfQuestions, sizeof(QuestionDNS_t));
+    if (dns->questions == NULL) {
+        perror("Error allocating memory for questions");
+        return NULL;
+    }
+
+    printf("Number of questions: %u\n", numberOfQuestions);
+    
+    for (int i = 0; i < numberOfQuestions; i++) {
+        // Parse domain name
+        packetBody = parseDomainName(packetBody, startOfPacket, &dns->questions[i].qname);
         if (packetBody == NULL) {
-            fprintf(stderr, "Error parsing domain name\n");
+            // Clean up already allocated resources
+            for (int j = 0; j < i; j++) {
+                free(dns->questions[j].qname);
+            }
             free(dns->questions);
+            dns->questions = NULL;
             return NULL;
         }
 
-        // Parse Qtype and Qclass
+        // Parse qtype and qclass
         dns->questions[i].qtype = ntohs(*(uint16_t *)packetBody);
         packetBody += 2;
         dns->questions[i].qclass = ntohs(*(uint16_t *)packetBody);
         packetBody += 2;
 
-        // Print the parsed values
-        fprintf(stdout, "The Domain Name is: %s\n", dns->questions[i].qname);
-        fprintf(stdout, "Qtype: %u\n", dns->questions[i].qtype);
-        fprintf(stdout, "Qclass: %u\n", dns->questions[i].qclass);
-
-        // Free the domain name if it's no longer needed
-        free(dns->questions[i].qname);
+        // Log the parsed question
+        printf("Question #%d:\n", i+1);
+        printf("  Domain: %s\n", dns->questions[i].qname);
+        printf("  Type: %u\n", dns->questions[i].qtype);
+        printf("  Class: %u\n", dns->questions[i].qclass);
     }
 
-    free(dns->questions);
     return packetBody;
 }
 
+const char *getRecordTypeName(uint16_t type) {
+    switch (type) {
+        case 1: return "A";
+        case 2: return "NS";
+        case 5: return "CNAME";
+        case 6: return "SOA";
+        case 12: return "PTR";
+        case 15: return "MX";
+        case 16: return "TXT";
+        case 28: return "AAAA";
+        case 33: return "SRV";
+        default: return "UNKNOWN";
+    }
+}
 
-void printDNSHeader(const u_char *packetBody){
-    DNS_t *dns = (DNS_t *)malloc(sizeof(DNS_t));
-    if(dns == NULL){
-        perror("Error while allocating for dns\n");
-        return;
-    }
-    dns->header = (HeaderDNS_t *) packetBody;
-    fprintf(stdout, "\tPacket ID: %u\n", ntohs(dns->header->id));
-    printBits(&dns->header->flags, sizeof(dns->header->flags), 15, 0);
-    fprintf(stdout, "\tflags: \n");
-    fprintf(stdout, "\tQdcount : %u\n", ntohs(dns->header->qdcount));
-    fprintf(stdout, "\tancount:  %u\n", ntohs(dns->header->ancount));
-    fprintf(stdout, "\tnscount : %u\n", ntohs(dns->header->nscount));
-    fprintf(stdout, "\tarcount : %u\n", ntohs(dns->header->arcount));
-    packetBody = packetBody + sizeof(HeaderDNS_t);
 
-    if(ntohs(dns->header->qdcount) > 0){
-        packetBody = paresDNSQuestionHeader(ntohs(dns->header->qdcount), packetBody ,dns);
+const u_char *parseDNSAnswers(uint16_t numberOfAnswers, const u_char *packetBody, 
+                             const u_char *startOfPacket, DNS_t *dns) {
+    if (numberOfAnswers == 0) {
+        return packetBody;
     }
-    if (ntohs(dns->header->ancount) > 0) {
-        paresDNSAnswerHeader(ntohs(dns->header->ancount), packetBody, dns);
+    
+    dns->answers = (ResourceRecord *)calloc(numberOfAnswers, sizeof(ResourceRecord));
+    if (dns->answers == NULL) {
+        perror("Error allocating memory for answers");
+        return NULL;
     }
-    free(dns);
+
+    printf("Number of answers: %u\n", numberOfAnswers);
+    const u_char *currentPtr = packetBody;
+    
+    for (int i = 0; i < numberOfAnswers; i++) {
+        // Parse the domain name this record refers to
+        currentPtr = parseDomainName(currentPtr, startOfPacket, &dns->answers[i].name);
+        if (currentPtr == NULL) {
+            // Clean up already allocated resources
+            for (int j = 0; j < i; j++) {
+                free(dns->answers[j].name);
+                if (dns->answers[j].rdata) {
+                    free(dns->answers[j].rdata);
+                }
+            }
+            free(dns->answers);
+            dns->answers = NULL;
+            return NULL;
+        }
+
+        // Parse record type and class
+        dns->answers[i].type = ntohs(*(uint16_t *)currentPtr);
+        currentPtr += 2;
+        dns->answers[i].class_ = ntohs(*(uint16_t *)currentPtr);
+        currentPtr += 2;
+        
+        // Parse TTL and data length
+        dns->answers[i].ttl = ntohl(*(uint32_t *)currentPtr);
+        currentPtr += 4;
+        dns->answers[i].rdlength = ntohs(*(uint16_t *)currentPtr);
+        currentPtr += 2;
+
+        // Log the answer header information
+        printf("Answer #%d:\n", i+1);
+        printf("  Name: %s\n", dns->answers[i].name);
+        printf("  Type: %s (%u)\n", getRecordTypeName(dns->answers[i].type), dns->answers[i].type);
+        printf("  Class: %u\n", dns->answers[i].class_);
+        printf("  TTL: %u seconds\n", dns->answers[i].ttl);
+        printf("  Data length: %u bytes\n", dns->answers[i].rdlength);
+
+        // Process the data based on record type
+        switch (dns->answers[i].type) {
+            case 1: { // A record (IPv4 address)
+                struct in_addr addr;
+                memcpy(&addr.s_addr, currentPtr, 4);
+                dns->answers[i].rdata = (unsigned char *)malloc(INET_ADDRSTRLEN);
+                if (dns->answers[i].rdata == NULL) {
+                    perror("Error allocating memory for A record");
+                    goto cleanup;
+                }
+                inet_ntop(AF_INET, &addr, (char *)dns->answers[i].rdata, INET_ADDRSTRLEN);
+                printf("  IPv4: %s\n", (char *)dns->answers[i].rdata);
+                currentPtr += 4;
+                break;
+            }
+            
+            case 5: { // CNAME record
+                unsigned char *cname;
+                const u_char *next = parseDomainName(currentPtr, startOfPacket, &cname);
+                if (next == NULL) {
+                    perror("Error parsing CNAME record");
+                    goto cleanup;
+                }
+                
+                dns->answers[i].rdata = cname;
+                printf("  CNAME: %s\n", (char *)cname);
+                currentPtr = next;
+                break;
+            }
+            
+            case 28: { // AAAA record (IPv6 address)
+                struct in6_addr addr6;
+                memcpy(&addr6, currentPtr, 16);
+                dns->answers[i].rdata = (unsigned char *)malloc(INET6_ADDRSTRLEN);
+                if (dns->answers[i].rdata == NULL) {
+                    perror("Error allocating memory for AAAA record");
+                    goto cleanup;
+                }
+                inet_ntop(AF_INET6, &addr6, (char *)dns->answers[i].rdata, INET6_ADDRSTRLEN);
+                printf("  IPv6: %s\n", (char *)dns->answers[i].rdata);
+                currentPtr += 16;
+                break;
+            }
+            
+            default: {
+                // For other record types, just store the binary data
+                dns->answers[i].rdata = (unsigned char *)malloc(dns->answers[i].rdlength);
+                if (dns->answers[i].rdata == NULL) {
+                    perror("Error allocating memory for record data");
+                    goto cleanup;
+                }
+                memcpy(dns->answers[i].rdata, currentPtr, dns->answers[i].rdlength);
+                printf("  Data: [%u bytes of binary data]\n", dns->answers[i].rdlength);
+                currentPtr += dns->answers[i].rdlength;
+            }
+        }
+        
+        continue;
+
+    cleanup:
+        // Clean up on error
+        for (int j = 0; j <= i; j++) {
+            free(dns->answers[j].name);
+            if (j < i && dns->answers[j].rdata) {
+                free(dns->answers[j].rdata);
+            }
+        }
+        free(dns->answers);
+        dns->answers = NULL;
+        return NULL;
+    }
+    
+    return currentPtr;
+}
+
+
+
+int parseDNSPacket(const u_char *packetData) {
+    // if (length < sizeof(HeaderDNS_t)) {
+    //     fprintf(stderr, "Packet too short for DNS header\n");
+    //     return -1;
+    // }
+    
+    DNS_t dns = {NULL};
+    dns.header = (HeaderDNS_t *)packetData;
+    const u_char *startOfPacket = packetData;
+    const u_char *currentPtr = packetData + sizeof(HeaderDNS_t);
+    
+    printf("DNS Header:\n");
+    printf("  ID: 0x%04x\n", ntohs(dns.header->id));
+    printf("  Flags: 0x%04x ", ntohs(dns.header->flags));
+    printBits(&dns.header->flags, sizeof(dns.header->flags), 15, 0);
+    
+    uint16_t flags = ntohs(dns.header->flags);
+    printf("    QR: %s\n", (flags & 0x8000) ? "Response" : "Query");
+    printf("    Opcode: %d\n", (flags >> 11) & 0xF);
+    printf("    AA: %s\n", (flags & 0x0400) ? "Yes" : "No");
+    printf("    TC: %s\n", (flags & 0x0200) ? "Yes" : "No");
+    printf("    RD: %s\n", (flags & 0x0100) ? "Yes" : "No");
+    printf("    RA: %s\n", (flags & 0x0080) ? "Yes" : "No");
+    printf("    Z: %d\n", (flags >> 4) & 0x7);
+    printf("    RCODE: %d\n", flags & 0xF);
+    
+    printf("  Questions: %u\n", ntohs(dns.header->qdcount));
+    printf("  Answer RRs: %u\n", ntohs(dns.header->ancount));
+    printf("  Authority RRs: %u\n", ntohs(dns.header->nscount));
+    printf("  Additional RRs: %u\n", ntohs(dns.header->arcount));
+    
+    // Parse questions
+    if (ntohs(dns.header->qdcount) > 0) {
+        currentPtr = parseDNSQuestions(ntohs(dns.header->qdcount), currentPtr, startOfPacket, &dns);
+        if (currentPtr == NULL) {
+            fprintf(stderr, "Error parsing DNS questions\n");
+            return -1;
+        }
+    }
+    
+    // Parse answers
+    if (ntohs(dns.header->ancount) > 0) {
+        currentPtr = parseDNSAnswers(ntohs(dns.header->ancount), currentPtr, startOfPacket, &dns);
+        if (currentPtr == NULL) {
+            fprintf(stderr, "Error parsing DNS answers\n");
+            // Clean up questions
+            for (int i = 0; i < ntohs(dns.header->qdcount); i++) {
+                free(dns.questions[i].qname);
+            }
+            free(dns.questions);
+            return -1;
+        }
+    }
+    
+    
+    // Clean up allocated resources
+    if (dns.questions) {
+        for (int i = 0; i < ntohs(dns.header->qdcount); i++) {
+            free(dns.questions[i].qname);
+        }
+        free(dns.questions);
+    }
+    
+    if (dns.answers) {
+        for (int i = 0; i < ntohs(dns.header->ancount); i++) {
+            free(dns.answers[i].name);
+            if (dns.answers[i].rdata) {
+                free(dns.answers[i].rdata);
+            }
+        }
+        free(dns.answers);
+    }
+    
+    return 0;
 }
 void printTCPHeader(const u_char *packetBody ){
 
@@ -310,7 +557,7 @@ void printUDPHeader(const u_char *packetBody ){
 
     if (ntohs(udp->srcPort) == 53 || ntohs(udp->destPort) == 53) {
         fprintf(stdout, "This is a DNS packet: \n");
-        printDNSHeader(packetBody);
+        parseDNSPacket(packetBody);
     }
     return ;
 }
@@ -413,7 +660,7 @@ void printIpHeader(const u_char *packetBody) {
     
     if (parser->protocol == 6) {
         /*int tcpHeaderLen = etherHeaderLen + ipHeaderLen ;*/
-        // printTCPHeader(packetBody);
+        printTCPHeader(packetBody);
     } else if (parser->protocol == 17) {
         printUDPHeader(packetBody);
     } else {
@@ -432,7 +679,7 @@ void packetHandler(u_char  *args, const struct pcap_pkthdr *packetHeader, const 
         fprintf(stdout, "------------------------------------\n");
     }else if(etherHeaderType == ETHERTYPE_ARP){
         fprintf(stdout, "This packet is an ARP packet\n");
-        /*printARPHeader(packetBody);*/
+        printARPHeader(packetBody);
         fprintf(stdout, "------------------------------------\n");
     }else if(etherHeaderType == ETHERTYPE_REVARP){
         fprintf(stdout, "This packet is a Reverse ARP  packet\n");
@@ -500,8 +747,8 @@ int main(int argc , char **argv){
     pcap_t *handler;
     const u_char *packet = NULL;
     struct pcap_pkthdr packetHeader = {.caplen = 0, .len = 0, .ts = {.tv_sec = 0, .tv_usec = 0}};
-    int packetCountLimit = 1;
-    int packetTimeOut = 90000; // In milliseconds
+    int packetCountLimit = 2000;
+    int packetTimeOut = 900; // In milliseconds
 
     handler = pcap_open_live(
         deviceName,

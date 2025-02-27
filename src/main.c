@@ -273,6 +273,48 @@ const char *getRecordTypeName(uint16_t type) {
 }
 
 
+const u_char *parseDNSAuthoritative(uint16_t numberOfAuthoritive, const u_char *packetBody, const u_char *startOfPacket, DNS_t *dns){
+    if(packetBody == NULL || startOfPacket == NULL){
+        return 0;
+    }
+    dns->authorities = (ResourceRecord *)malloc(sizeof(ResourceRecord));
+
+    if(dns->authorities == NULL){
+        return 0;
+    }
+    const u_char *currentPtr = packetBody;
+
+    fprintf(stdout, "The number of Authoritive records are %u",numberOfAuthoritive);
+
+    for(int i = 0 ; i < numberOfAuthoritive; i++){
+        currentPtr = parseDomainName(currentPtr, startOfPacket, &dns->authorities[i].name);
+        if (currentPtr == NULL) {
+            for(int j = 0 ; j < i; j++){
+                free(dns->authorities[i].name);
+                if(dns->authorities[i].rdata){
+                    free(dns->authorities[i].rdata);
+                }
+            }
+        }
+
+        dns->authorities[i].type = ntohs(*(uint16_t *) currentPtr);
+        currentPtr += 2;
+        dns->authorities[i].class_ = ntohs(*(uint16_t *) currentPtr);
+        currentPtr += 2;
+        dns->authorities[i].ttl = ntohs(*(uint32_t *) currentPtr);
+        currentPtr += 4;
+        dns->authorities[i].rdlength = ntohs(*(uint16_t *) currentPtr);
+        currentPtr += 2;
+        printf("  Domain: %s\n", dns->authorities[i].name);
+        printf("  Type: %u\n", dns->authorities[i].type);
+        printf("  Class: %u\n", dns->authorities[i].class_);
+        printf("  ttl: %u\n", dns->authorities[i].ttl);
+        printf("  Length : %u\n", dns->authorities[i].rdlength);
+    }
+
+    return currentPtr;
+
+}
 const u_char *parseDNSAnswers(uint16_t numberOfAnswers, const u_char *packetBody, 
                              const u_char *startOfPacket, DNS_t *dns) {
     if (numberOfAnswers == 0) {
@@ -447,14 +489,30 @@ int parseDNSPacket(const u_char *packetData) {
         if (currentPtr == NULL) {
             fprintf(stderr, "Error parsing DNS answers\n");
             // Clean up questions
-            for (int i = 0; i < ntohs(dns.header->qdcount); i++) {
-                free(dns.questions[i].qname);
+            for (int i = 0; i < ntohs(dns.header->arcount); i++) {
+                free(dns.answers[i].name);
             }
-            free(dns.questions);
+            free(dns.answers);
             return -1;
         }
     }
     
+    // Parse Authority
+    if (ntohs(dns.header->arcount) > 0) {
+        currentPtr = parseDNSAuthoritative(ntohs(dns.header->arcount), currentPtr, startOfPacket, &dns);
+        if (currentPtr == NULL) {
+            fprintf(stderr, "Error parsing DNS answers\n");
+            // Clean up questions
+            for (int i = 0; i < ntohs(dns.header->arcount); i++) {
+                free(dns.authorities[i].name);
+                if(dns.authorities[i].rdata){
+                    free(dns.authorities[i].rdata);
+                }
+            }
+            free(dns.authorities);
+            return -1;
+        }
+    }
     
     // Clean up allocated resources
     if (dns.questions) {
@@ -474,6 +532,15 @@ int parseDNSPacket(const u_char *packetData) {
         free(dns.answers);
     }
     
+    if (dns.authorities) {
+        for (int i = 0; i < ntohs(dns.header->arcount); i++) {
+            free(dns.authorities[i].name);
+            if (dns.authorities[i].rdata) {
+                free(dns.answers[i].rdata);
+            }
+        }
+        free(dns.authorities);
+    }
     return 0;
 }
 void printTCPHeader(const u_char *packetBody ){

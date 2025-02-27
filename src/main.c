@@ -498,12 +498,12 @@ int parseDNSPacket(const u_char *packetData) {
     }
     
     // Parse Authority
-    if (ntohs(dns.header->arcount) > 0) {
-        currentPtr = parseDNSAuthoritative(ntohs(dns.header->arcount), currentPtr, startOfPacket, &dns);
+    if (ntohs(dns.header->nscount) > 0) {
+        currentPtr = parseDNSAuthoritative(ntohs(dns.header->nscount), currentPtr, startOfPacket, &dns);
         if (currentPtr == NULL) {
             fprintf(stderr, "Error parsing DNS answers\n");
             // Clean up questions
-            for (int i = 0; i < ntohs(dns.header->arcount); i++) {
+            for (int i = 0; i < ntohs(dns.header->nscount); i++) {
                 free(dns.authorities[i].name);
                 if(dns.authorities[i].rdata){
                     free(dns.authorities[i].rdata);

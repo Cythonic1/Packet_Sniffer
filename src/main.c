@@ -82,8 +82,8 @@ int isCompressedLabel(uint16_t bytes) {
 /*Simple explnation of this function
  * First we getting packetBody which is the packet in the current state
  * for example the packet after parsing the question header will start from
- * the answer header and so one. 
- * start of Packet is the beggning of the dns header which is getting from 
+ * the answer header and so one.
+ * start of Packet is the beggning of the dns header which is getting from
  * parsing DNS header function. lastly a double pointer to where we want to save
  * the domain name
  *
@@ -105,14 +105,14 @@ const u_char *parseDomainName(const u_char *packetBody, const u_char *startOfPac
     int totalLen = 0;
     int labelCount = 0;
     const u_char *ptr = packetBody;
-    
+
     while (*ptr != 0) {
         // Check for compression pointer
         if ((*ptr & 0xC0) == 0xC0) {
             uint16_t offset = ntohs(*(uint16_t *)ptr) & 0x3FFF;
             // We need to follow the compression pointer
             const u_char *targetPtr = startOfPacket + offset;
-            
+
             // Continue counting from the compression target
             while (*targetPtr != 0) {
                 if ((*targetPtr & 0xC0) == 0xC0) {
@@ -121,17 +121,17 @@ const u_char *parseDomainName(const u_char *packetBody, const u_char *startOfPac
                     targetPtr = startOfPacket + nestedOffset;
                     continue;
                 }
-                
+
                 int labelLen = *targetPtr;
                 totalLen += labelLen;
                 labelCount++;
                 targetPtr += (labelLen + 1);
             }
-            
+
             ptr += 2; // Skip compression pointer
             break;
         }
-        
+
         int labelLen = *ptr;
         totalLen += labelLen;
         labelCount++;
@@ -150,16 +150,16 @@ const u_char *parseDomainName(const u_char *packetBody, const u_char *startOfPac
     ptr = packetBody;
     char *outPtr = (char *)*domainNameOut;
     int isFirstLabel = 1;
-    
+
     while (*ptr != 0) {
-        // IF the pointer is compress 
+        // IF the pointer is compress
         if ((*ptr & 0xC0) == 0xC0) {
             uint16_t offset = ntohs(*(uint16_t *)ptr) & 0x3FFF;
             const u_char *targetPtr = startOfPacket + offset;
-            
+
             // To check for contiues lables and nested pointers
             int isFirstCompressedLabel = 1;
-            
+
             while (*targetPtr != 0) {
                 if ((*targetPtr & 0xC0) == 0xC0) {
                     // Handle nested compression
@@ -167,9 +167,9 @@ const u_char *parseDomainName(const u_char *packetBody, const u_char *startOfPac
                     targetPtr = startOfPacket + nestedOffset;
                     continue;
                 }
-                
+
                 int labelLen = *targetPtr;
-                
+
                 // Add dot between labels
                 // if (!isFirstLabel && !isFirstCompressedLabel) {
                 //     *outPtr++ = '.';
@@ -179,47 +179,47 @@ const u_char *parseDomainName(const u_char *packetBody, const u_char *startOfPac
                 memcpy(outPtr, targetPtr + 1, labelLen);
                 outPtr += labelLen;
                 targetPtr += (labelLen + 1);
-                
+
                 isFirstLabel = 0;
                 isFirstCompressedLabel = 0;
             }
-            
+
             ptr += 2; // Skip compression pointer
             break;
         }
-        
+
         int labelLen = *ptr;
-        
+
         // Add dot between labels
         if (!isFirstLabel) {
             *outPtr++ = '.';
         }
-        
+
         // *outPtr++ = '.';
         // Copy label content
         memcpy(outPtr, ptr + 1, labelLen);
         outPtr += labelLen;
         ptr += (labelLen + 1);
-        
+
         isFirstLabel = 0;
     }
-    
+
     *outPtr = '\0'; // Null-terminate the string
-    
+
     // Move past the null terminator if we didn't use compression
     if (*ptr == 0) {
         ptr++;
     }
-    
+
     return ptr;
 }
 
-const u_char *parseDNSQuestions(uint16_t numberOfQuestions, const u_char *packetBody, 
+const u_char *parseDNSQuestions(uint16_t numberOfQuestions, const u_char *packetBody,
                                const u_char *startOfPacket, DNS_t *dns) {
     if (numberOfQuestions == 0) {
         return packetBody;
     }
-    
+
     dns->questions = (QuestionDNS_t *)calloc(numberOfQuestions, sizeof(QuestionDNS_t));
     if (dns->questions == NULL) {
         perror("Error allocating memory for questions");
@@ -227,7 +227,7 @@ const u_char *parseDNSQuestions(uint16_t numberOfQuestions, const u_char *packet
     }
 
     printf("Number of questions: %u\n", numberOfQuestions);
-    
+
     for (int i = 0; i < numberOfQuestions; i++) {
         // Parse domain name
         packetBody = parseDomainName(packetBody, startOfPacket, &dns->questions[i].qname);
@@ -315,12 +315,12 @@ const u_char *parseDNSAuthoritative(uint16_t numberOfAuthoritive, const u_char *
     return currentPtr;
 
 }
-const u_char *parseDNSAnswers(uint16_t numberOfAnswers, const u_char *packetBody, 
+const u_char *parseDNSAnswers(uint16_t numberOfAnswers, const u_char *packetBody,
                              const u_char *startOfPacket, DNS_t *dns) {
     if (numberOfAnswers == 0) {
         return packetBody;
     }
-    
+
     dns->answers = (ResourceRecord *)calloc(numberOfAnswers, sizeof(ResourceRecord));
     if (dns->answers == NULL) {
         perror("Error allocating memory for answers");
@@ -329,7 +329,7 @@ const u_char *parseDNSAnswers(uint16_t numberOfAnswers, const u_char *packetBody
 
     printf("Number of answers: %u\n", numberOfAnswers);
     const u_char *currentPtr = packetBody;
-    
+
     for (int i = 0; i < numberOfAnswers; i++) {
         // Parse the domain name this record refers to
         currentPtr = parseDomainName(currentPtr, startOfPacket, &dns->answers[i].name);
@@ -351,7 +351,7 @@ const u_char *parseDNSAnswers(uint16_t numberOfAnswers, const u_char *packetBody
         currentPtr += 2;
         dns->answers[i].class_ = ntohs(*(uint16_t *)currentPtr);
         currentPtr += 2;
-        
+
         // Parse TTL and data length
         dns->answers[i].ttl = ntohl(*(uint32_t *)currentPtr);
         currentPtr += 4;
@@ -381,7 +381,7 @@ const u_char *parseDNSAnswers(uint16_t numberOfAnswers, const u_char *packetBody
                 currentPtr += 4;
                 break;
             }
-            
+
             case 5: { // CNAME record
                 unsigned char *cname;
                 const u_char *next = parseDomainName(currentPtr, startOfPacket, &cname);
@@ -389,13 +389,13 @@ const u_char *parseDNSAnswers(uint16_t numberOfAnswers, const u_char *packetBody
                     perror("Error parsing CNAME record");
                     goto cleanup;
                 }
-                
+
                 dns->answers[i].rdata = cname;
                 printf("  CNAME: %s\n", (char *)cname);
                 currentPtr = next;
                 break;
             }
-            
+
             case 28: { // AAAA record (IPv6 address)
                 struct in6_addr addr6;
                 memcpy(&addr6, currentPtr, 16);
@@ -409,7 +409,7 @@ const u_char *parseDNSAnswers(uint16_t numberOfAnswers, const u_char *packetBody
                 currentPtr += 16;
                 break;
             }
-            
+
             default: {
                 // For other record types, just store the binary data
                 dns->answers[i].rdata = (unsigned char *)malloc(dns->answers[i].rdlength);
@@ -422,7 +422,7 @@ const u_char *parseDNSAnswers(uint16_t numberOfAnswers, const u_char *packetBody
                 currentPtr += dns->answers[i].rdlength;
             }
         }
-        
+
         continue;
 
     cleanup:
@@ -437,7 +437,7 @@ const u_char *parseDNSAnswers(uint16_t numberOfAnswers, const u_char *packetBody
         dns->answers = NULL;
         return NULL;
     }
-    
+
     return currentPtr;
 }
 
@@ -448,17 +448,17 @@ int parseDNSPacket(const u_char *packetData) {
     //     fprintf(stderr, "Packet too short for DNS header\n");
     //     return -1;
     // }
-    
+
     DNS_t dns = {NULL};
     dns.header = (HeaderDNS_t *)packetData;
     const u_char *startOfPacket = packetData;
     const u_char *currentPtr = packetData + sizeof(HeaderDNS_t);
-    
+
     printf("DNS Header:\n");
     printf("  ID: 0x%04x\n", ntohs(dns.header->id));
     printf("  Flags: 0x%04x ", ntohs(dns.header->flags));
     printBits(&dns.header->flags, sizeof(dns.header->flags), 15, 0);
-    
+
     uint16_t flags = ntohs(dns.header->flags);
     printf("    QR: %s\n", (flags & 0x8000) ? "Response" : "Query");
     printf("    Opcode: %d\n", (flags >> 11) & 0xF);
@@ -468,12 +468,12 @@ int parseDNSPacket(const u_char *packetData) {
     printf("    RA: %s\n", (flags & 0x0080) ? "Yes" : "No");
     printf("    Z: %d\n", (flags >> 4) & 0x7);
     printf("    RCODE: %d\n", flags & 0xF);
-    
+
     printf("  Questions: %u\n", ntohs(dns.header->qdcount));
     printf("  Answer RRs: %u\n", ntohs(dns.header->ancount));
     printf("  Authority RRs: %u\n", ntohs(dns.header->nscount));
     printf("  Additional RRs: %u\n", ntohs(dns.header->arcount));
-    
+
     // Parse questions
     if (ntohs(dns.header->qdcount) > 0) {
         currentPtr = parseDNSQuestions(ntohs(dns.header->qdcount), currentPtr, startOfPacket, &dns);
@@ -482,7 +482,7 @@ int parseDNSPacket(const u_char *packetData) {
             return -1;
         }
     }
-    
+
     // Parse answers
     if (ntohs(dns.header->ancount) > 0) {
         currentPtr = parseDNSAnswers(ntohs(dns.header->ancount), currentPtr, startOfPacket, &dns);
@@ -496,7 +496,7 @@ int parseDNSPacket(const u_char *packetData) {
             return -1;
         }
     }
-    
+
     // Parse Authority
     if (ntohs(dns.header->nscount) > 0) {
         currentPtr = parseDNSAuthoritative(ntohs(dns.header->nscount), currentPtr, startOfPacket, &dns);
@@ -513,7 +513,7 @@ int parseDNSPacket(const u_char *packetData) {
             return -1;
         }
     }
-    
+
     // Clean up allocated resources
     if (dns.questions) {
         for (int i = 0; i < ntohs(dns.header->qdcount); i++) {
@@ -521,7 +521,7 @@ int parseDNSPacket(const u_char *packetData) {
         }
         free(dns.questions);
     }
-    
+
     if (dns.answers) {
         for (int i = 0; i < ntohs(dns.header->ancount); i++) {
             free(dns.answers[i].name);
@@ -531,7 +531,7 @@ int parseDNSPacket(const u_char *packetData) {
         }
         free(dns.answers);
     }
-    
+
     if (dns.authorities) {
         for (int i = 0; i < ntohs(dns.header->arcount); i++) {
             free(dns.authorities[i].name);
@@ -724,7 +724,7 @@ void printIpHeader(const u_char *packetBody) {
     printf("Destination IP address: %s\n", inet_ntoa(destAddr));
 
     packetBody = packetBody + ipHeaderLen;
-    
+
     if (parser->protocol == 6) {
         /*int tcpHeaderLen = etherHeaderLen + ipHeaderLen ;*/
         printTCPHeader(packetBody);
@@ -809,7 +809,7 @@ int main(int argc , char **argv){
 
     /*pcap_freealldevs(devicesList);*/
 
-    // ** Capture Live packets with the interface we have ** 
+    // ** Capture Live packets with the interface we have **
 
     pcap_t *handler;
     const u_char *packet = NULL;

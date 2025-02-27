@@ -26,12 +26,27 @@ typedef struct Vector {
 }Vector;
 
 
+Vector *vectorInit(VectorType type);
+void vectorAppend(Vector *vector, void *data);
+void vectorExpend(Vector *vector);
 
-Vector *vectorInit(uint64_t size, VectorType type){
+Vector *vectorInit(VectorType type){
     // Adding 20 here just to add an extra space just in Case
-    Vector *newVect =  (Vector *)malloc(sizeof(Vector)+ (size + 20));
+    Vector *newVect =  (Vector *)malloc(sizeof(Vector));
+    newVect->header.size = 0;
+    newVect->header.capacity = 20;
+    *newVect->value = malloc(sizeof(void *) * newVect->header.capacity);
+    return newVect;
+}
 
 
+void vectorAppend(Vector *vector, void *data){
+    if(vector->header.capacity <= vector->header.size){
+        vectorExpend(vector);
+    }
+
+    vector->value[vector->header.size] = data;
+    vector->header.size += 1;
 }
 
 

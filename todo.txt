@@ -3,4 +3,5 @@
 2 - finish the DNS header.
 3 - implement and use the vectore in the code to make dynamic allocation
     easier.
+4 - Fix the unvalid domain name pares
 

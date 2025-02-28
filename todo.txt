@@ -1,0 +1,6 @@
+
+1 - Refactore the code specially in the domainName function.
+2 - finish the DNS header.
+3 - implement and use the vectore in the code to make dynamic allocation
+    easier.
+

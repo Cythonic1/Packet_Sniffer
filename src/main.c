@@ -273,6 +273,15 @@ const char *getRecordTypeName(uint16_t type) {
 }
 
 
+// This function should take care of the rest of the Authoritive headers
+// Just to not compicate stuff
+//
+const u_char *parseDNSAuthoritativeExtraHeaders(uint16_t numberOfAuthoritive, const u_char *packetBody, const u_char *startOfPacket, DNS_t *dns){
+
+    return NULL;
+
+}
+
 const u_char *parseDNSAuthoritative(uint16_t numberOfAuthoritive, const u_char *packetBody, const u_char *startOfPacket, DNS_t *dns){
     if(packetBody == NULL || startOfPacket == NULL){
         return 0;

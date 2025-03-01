@@ -299,13 +299,13 @@ const u_char *parseDNSAuthoritative(uint16_t numberOfAuthoritive, const u_char *
         currentPtr = parseDomainName(currentPtr, startOfPacket, &dns->authorities[i].name);
         if (currentPtr == NULL) {
             printf("Pointer is NULLLLLLLLLLLLLLLLLL \n");
-            for(int j = 0 ; j < i; j++){
-                free(dns->authorities[j].name);
-                if(dns->authorities[j].rdata){
-                    free(dns->authorities[j].rdata);
-                }
-            }
-            free(dns->authorities);
+            // for(int j = 0 ; j < i; j++){
+            //     free(dns->authorities[j].name);
+            //     if(dns->authorities[j].rdata){
+            //         free(dns->authorities[j].rdata);
+            //     }
+            // }
+            // free(dns->authorities);
             return NULL;  // Return early on failure!
         }
 

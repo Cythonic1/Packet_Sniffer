@@ -286,7 +286,7 @@ const u_char *parseDNSAuthoritative(uint16_t numberOfAuthoritive, const u_char *
     if(packetBody == NULL || startOfPacket == NULL){
         return NULL;
     }
-    dns->authorities = (ResourceRecord *)malloc(numberOfAuthoritive * sizeof(ResourceRecord));
+    dns->authorities = (ResourceRecord *)calloc(numberOfAuthoritive, sizeof(ResourceRecord));
 
     if(dns->authorities == NULL){
         return NULL;
@@ -298,14 +298,6 @@ const u_char *parseDNSAuthoritative(uint16_t numberOfAuthoritive, const u_char *
     for(int i = 0 ; i < numberOfAuthoritive; i++){
         currentPtr = parseDomainName(currentPtr, startOfPacket, &dns->authorities[i].name);
         if (currentPtr == NULL) {
-            printf("Pointer is NULLLLLLLLLLLLLLLLLL \n");
-            // for(int j = 0 ; j < i; j++){
-            //     free(dns->authorities[j].name);
-            //     if(dns->authorities[j].rdata){
-            //         free(dns->authorities[j].rdata);
-            //     }
-            // }
-            // free(dns->authorities);
             return NULL;  // Return early on failure!
         }
 

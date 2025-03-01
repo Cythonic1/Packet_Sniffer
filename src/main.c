@@ -284,12 +284,12 @@ const u_char *parseDNSAuthoritativeExtraHeaders(uint16_t numberOfAuthoritive, co
 
 const u_char *parseDNSAuthoritative(uint16_t numberOfAuthoritive, const u_char *packetBody, const u_char *startOfPacket, DNS_t *dns){
     if(packetBody == NULL || startOfPacket == NULL){
-        return 0;
+        return NULL;
     }
-    dns->authorities = (ResourceRecord *)malloc(sizeof(ResourceRecord));
+    dns->authorities = (ResourceRecord *)malloc(numberOfAuthoritive * sizeof(ResourceRecord));
 
     if(dns->authorities == NULL){
-        return 0;
+        return NULL;
     }
     const u_char *currentPtr = packetBody;
 
@@ -298,19 +298,22 @@ const u_char *parseDNSAuthoritative(uint16_t numberOfAuthoritive, const u_char *
     for(int i = 0 ; i < numberOfAuthoritive; i++){
         currentPtr = parseDomainName(currentPtr, startOfPacket, &dns->authorities[i].name);
         if (currentPtr == NULL) {
+            printf("Pointer is NULLLLLLLLLLLLLLLLLL \n");
             for(int j = 0 ; j < i; j++){
-                free(dns->authorities[i].name);
-                if(dns->authorities[i].rdata){
-                    free(dns->authorities[i].rdata);
+                free(dns->authorities[j].name);
+                if(dns->authorities[j].rdata){
+                    free(dns->authorities[j].rdata);
                 }
             }
+            free(dns->authorities);
+            return NULL;  // Return early on failure!
         }
 
         dns->authorities[i].type = ntohs(*(uint16_t *) currentPtr);
         currentPtr += 2;
         dns->authorities[i].class_ = ntohs(*(uint16_t *) currentPtr);
         currentPtr += 2;
-        dns->authorities[i].ttl = ntohs(*(uint32_t *) currentPtr);
+        dns->authorities[i].ttl = ntohl(*(uint32_t *) currentPtr);
         currentPtr += 4;
         dns->authorities[i].rdlength = ntohs(*(uint16_t *) currentPtr);
         currentPtr += 2;
@@ -458,7 +461,7 @@ int parseDNSPacket(const u_char *packetData) {
     //     return -1;
     // }
 
-    DNS_t dns = {NULL};
+    DNS_t dns = {NULL, NULL, NULL, NULL, NULL};
     dns.header = (HeaderDNS_t *)packetData;
     const u_char *startOfPacket = packetData;
     const u_char *currentPtr = packetData + sizeof(HeaderDNS_t);
@@ -498,7 +501,7 @@ int parseDNSPacket(const u_char *packetData) {
         if (currentPtr == NULL) {
             fprintf(stderr, "Error parsing DNS answers\n");
             // Clean up questions
-            for (int i = 0; i < ntohs(dns.header->arcount); i++) {
+            for (int i = 0; i < ntohs(dns.header->ancount); i++) {
                 free(dns.answers[i].name);
             }
             free(dns.answers);
@@ -542,10 +545,12 @@ int parseDNSPacket(const u_char *packetData) {
     }
 
     if (dns.authorities) {
-        for (int i = 0; i < ntohs(dns.header->arcount); i++) {
-            free(dns.authorities[i].name);
-            if (dns.authorities[i].rdata) {
-                free(dns.answers[i].rdata);
+        for (int i = 0; i < ntohs(dns.header->nscount); i++) {
+            if(dns.authorities[i].name){
+                free(dns.authorities[i].name);
+                if (dns.authorities[i].rdata) {
+                    free(dns.authorities[i].rdata);
+                }
             }
         }
         free(dns.authorities);

@@ -276,9 +276,54 @@ const char *getRecordTypeName(uint16_t type) {
 // This function should take care of the rest of the Authoritive headers
 // Just to not compicate stuff
 //
-const u_char *parseDNSAuthoritativeExtraHeaders(uint16_t numberOfAuthoritive, const u_char *packetBody, const u_char *startOfPacket, DNS_t *dns){
+const u_char *parseDNSAuthoritativeExtraHeaders(const u_char *packetBody, const u_char *startOfPacket){
+    unsigned char *primaryName, *responsibleAuthorities;
+    const u_char *currentPtr = packetBody;
+    currentPtr = parseDomainName(currentPtr, startOfPacket, &primaryName);
+    if(currentPtr ==  NULL){
+        free(primaryName);
+        return NULL;
+    }
 
-    return NULL;
+    fprintf(stdout,"primaryName : %s\n", primaryName);
+    free(primaryName);
+
+
+    currentPtr = parseDomainName(currentPtr, startOfPacket, &responsibleAuthorities);
+    if(currentPtr ==  NULL){
+        free(responsibleAuthorities);
+        return NULL;
+    }
+
+    fprintf(stdout,": responsibleAuthorities %s\n", responsibleAuthorities);
+    free(responsibleAuthorities);
+
+    fprintf(stdout, "After names: %02x %02x %02x %02x\n", 
+        currentPtr[0], currentPtr[1], currentPtr[2], currentPtr[3]);
+    uint32_t serialNumber, refreshInterval, retryIntrval, expireLimit, minimumTTL;
+
+    serialNumber = ntohl(*(uint32_t *) currentPtr);
+    fprintf(stdout, "Serial Number : %u\n", serialNumber);
+    currentPtr += 4;
+
+    refreshInterval = ntohl(*(uint32_t *) currentPtr);
+    fprintf(stdout, "refresh Interval : %u\n", refreshInterval);
+    currentPtr += 4;
+
+    retryIntrval = ntohl(*(uint32_t *) currentPtr);
+    fprintf(stdout, "retry Interval : %u\n", retryIntrval);
+    currentPtr += 4;
+
+    expireLimit = ntohl(*(uint32_t *) currentPtr);
+    fprintf(stdout, "expire Limit : %u\n", expireLimit );
+    currentPtr += 4;
+
+    minimumTTL = ntohl(*(uint32_t *) currentPtr);
+    fprintf(stdout, "minimum TTL : %u\n", minimumTTL);
+    currentPtr += 4;
+
+
+    return currentPtr;
 
 }
 
@@ -315,6 +360,7 @@ const u_char *parseDNSAuthoritative(uint16_t numberOfAuthoritive, const u_char *
         printf("  ttl: %u\n", dns->authorities[i].ttl);
         printf("  Length : %u\n", dns->authorities[i].rdlength);
     }
+    currentPtr = parseDNSAuthoritativeExtraHeaders(currentPtr, startOfPacket);
 
     return currentPtr;
 
